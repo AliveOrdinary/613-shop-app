@@ -114,3 +114,94 @@ describe("customers and vehicles", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+describe("jobs", () => {
+  let customer = "";
+  let vehicle = "";
+
+  beforeAll(async () => {
+    await as(OWNER, async () => {
+      const c = await db.query<{ id: string }>("insert into customers (name, phone) values ('Ava Chen', '613-555-0111') returning id");
+      customer = c.rows[0].id;
+      const v = await db.query<{ id: string }>(
+        "insert into vehicles (customer_id, year, make, model, odometer_km) values ($1, 2020, 'Honda', 'Civic', 61000) returning id",
+        [customer],
+      );
+      vehicle = v.rows[0].id;
+    });
+  });
+
+  type Job = { id: string; number: number; status: string; valid_until: string; odometer_in: number; hst_rate: string };
+  const create = (number: number | null = null, date: string | null = null) =>
+    as(OWNER, async () => (await db.query<Job>("select *, valid_until::text as valid_until from create_job($1, $2, $3, $4)", [customer, vehicle, number, date])).rows[0]);
+
+  it("numbers jobs from 200 and copies the vehicle's odometer and today's HST rate", async () => {
+    const a = await create();
+    const b = await create();
+    expect([a.number, b.number]).toEqual([200, 201]);
+    expect(a.status).toBe("estimate");
+    expect(a.odometer_in).toBe(61000);
+    expect(Number(a.hst_rate)).toBe(13);
+  });
+
+  it("accepts a number entered by hand for back-dated work, and skips it later", async () => {
+    const old = await create(150, "2026-09-01");
+    expect(old.number).toBe(150);
+    expect(old.valid_until).toBe("2026-10-01");
+    const ahead = await create(203);
+    expect(ahead.number).toBe(203);
+    const next = await create();
+    expect(next.number).toBe(204);
+    await expect(create(150)).rejects.toThrow(/already used/);
+  });
+
+  it("refuses a vehicle that belongs to someone else", async () => {
+    const other = await as(OWNER, async () => (await db.query<{ id: string }>("insert into customers (name, phone) values ('Other', '1') returning id")).rows[0].id);
+    await expect(as(OWNER, () => db.query("select * from create_job($1, $2)", [other, vehicle]))).rejects.toThrow(/doesn't belong/);
+  });
+
+  it("walks a job from estimate to paid, enforcing each step", async () => {
+    const j = await create();
+    const upd = (sql: string) => as(OWNER, () => db.query(`update jobs set ${sql} where id = $1`, [j.id]));
+
+    await as(OWNER, () =>
+      db.query("insert into job_lines (job_id, kind, description, quantity, unit_price) values ($1, 'labour_body', 'Bumper R&R', 2, 95)", [j.id]),
+    );
+    await expect(upd("status = 'invoiced'")).rejects.toThrow(/can't go from estimate to invoiced/);
+    await expect(upd("status = 'approved'")).rejects.toThrow(/Record how the customer approved/);
+    await upd("status = 'approved', approval_method = 'phone', approved_total = 214.70, approved_at = now()");
+    await upd("status = 'ready'");
+    await upd(`status = 'invoiced', invoice_date = current_date, invoiced_at = now(), invoice_totals = '{"total": 214.70}'`);
+
+    // Locked once invoiced
+    await expect(upd("discount = 10")).rejects.toThrow(/invoiced/);
+    await expect(as(OWNER, () => db.query("delete from job_lines where job_id = $1", [j.id]))).rejects.toThrow(/invoiced/);
+    // Notes can still change
+    await upd("tech_notes = 'Customer picked up'");
+
+    await expect(upd("status = 'paid'")).rejects.toThrow(/how the invoice was paid/);
+    await upd("status = 'paid', payment_method = 'debit', amount_paid = 214.70, paid_at = now()");
+  });
+
+  it("reopens an invoice for correction under the same number and unlocks it", async () => {
+    const j = await create();
+    const upd = (sql: string) => as(OWNER, () => db.query(`update jobs set ${sql} where id = $1`, [j.id]));
+    await upd("status = 'approved', approval_method = 'signed', approved_total = 0, approved_at = now()");
+    await upd("status = 'ready'");
+    await upd(`status = 'invoiced', invoice_date = current_date, invoiced_at = now(), invoice_totals = '{"total": 0}'`);
+    await upd("status = 'ready'");
+    const { rows } = await as(OWNER, () => db.query<{ number: number; invoice_totals: unknown }>("select number, invoice_totals from jobs where id = $1", [j.id]));
+    expect(rows[0]).toEqual({ number: j.number, invoice_totals: null });
+    await upd("discount = 5");
+  });
+
+  it("won't delete a customer who has jobs", async () => {
+    await expect(as(OWNER, () => db.query("delete from customers where id = $1", [customer]))).rejects.toThrow();
+  });
+
+  it("hides jobs from accounts that aren't staff and won't let them create one", async () => {
+    const { rows } = await as(STRANGER, () => db.query("select * from jobs"));
+    expect(rows).toHaveLength(0);
+    await expect(as(STRANGER, () => db.query("select * from create_job($1, $2)", [customer, vehicle]))).rejects.toThrow();
+  });
+});

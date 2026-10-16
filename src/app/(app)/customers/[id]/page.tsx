@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { CustomerDetail } from "@/components/CustomerDetail";
+import { CustomerDetail, type CustomerJob } from "@/components/CustomerDetail";
 import { supabaseServer } from "@/lib/supabase/server";
 import type { CustomerWithVehicles } from "@/lib/types";
 
@@ -18,5 +18,11 @@ export default async function CustomerPage({ params, searchParams }: PageProps<"
     .maybeSingle<CustomerWithVehicles>();
   if (error) throw new Error(`Couldn't load the customer: ${error.message}`);
   if (!data) notFound();
-  return <CustomerDetail customer={data} justAdded={added === "1"} />;
+  const { data: jobs } = await sb
+    .from("jobs")
+    .select("id, number, status, vehicle_id, estimate_date, invoice_date")
+    .eq("customer_id", id)
+    .order("number", { ascending: false })
+    .returns<CustomerJob[]>();
+  return <CustomerDetail customer={data} jobs={jobs ?? []} justAdded={added === "1"} />;
 }

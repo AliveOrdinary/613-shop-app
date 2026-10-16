@@ -7,8 +7,9 @@ import { CustomerForm } from "./CustomerForm";
 import { VehicleForm } from "./VehicleForm";
 import { Badge, Button, Card, EmptyState, PageTitle, SectionTitle } from "./ui";
 import { vehicleLabel } from "@/lib/format";
+import { STATUS_LABEL, STATUS_TONE, formatDate, jobNumber } from "@/lib/jobs";
 import { supabaseBrowser } from "@/lib/supabase/client";
-import { EMPTY_VEHICLE, type CustomerDraft, type CustomerWithVehicles, type Vehicle, type VehicleDraft } from "@/lib/types";
+import { EMPTY_VEHICLE, type CustomerDraft, type CustomerWithVehicles, type Job, type Vehicle, type VehicleDraft } from "@/lib/types";
 
 function draftOf(c: CustomerWithVehicles): CustomerDraft {
   const { kind, name, company, phone, email, address_line, city, province, postal_code, notes } = c;
@@ -29,7 +30,9 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
   );
 }
 
-export function CustomerDetail({ customer, justAdded }: { customer: CustomerWithVehicles; justAdded: boolean }) {
+export type CustomerJob = Pick<Job, "id" | "number" | "status" | "vehicle_id" | "estimate_date" | "invoice_date">;
+
+export function CustomerDetail({ customer, jobs, justAdded }: { customer: CustomerWithVehicles; jobs: CustomerJob[]; justAdded: boolean }) {
   const router = useRouter();
   const sb = supabaseBrowser();
   const [editing, setEditing] = useState(false);
@@ -52,7 +55,11 @@ export function CustomerDetail({ customer, justAdded }: { customer: CustomerWith
     setDeleting(true);
     const { error } = await sb.from("customers").delete().eq("id", customer.id);
     setDeleting(false);
-    if (error) return window.alert(`Couldn't delete: ${error.message}`);
+    if (error) {
+      return window.alert(
+        error.code === "23503" ? "This customer has jobs on file, which are tax records, so they can't be deleted." : `Couldn't delete: ${error.message}`,
+      );
+    }
     router.replace("/customers");
     router.refresh();
   }
@@ -60,7 +67,9 @@ export function CustomerDetail({ customer, justAdded }: { customer: CustomerWith
   async function removeVehicle(v: Vehicle) {
     if (!window.confirm(`Remove the ${vehicleLabel(v)}? This can't be undone.`)) return;
     const { error } = await sb.from("vehicles").delete().eq("id", v.id);
-    if (error) return window.alert(`Couldn't remove: ${error.message}`);
+    if (error) {
+      return window.alert(error.code === "23503" ? "This vehicle has jobs on file, so it can't be removed." : `Couldn't remove: ${error.message}`);
+    }
     router.refresh();
   }
 
@@ -162,6 +171,12 @@ export function CustomerDetail({ customer, justAdded }: { customer: CustomerWith
                 {v.vin ? <p className="mt-1 font-mono text-sm tracking-wider text-charcoal">{v.vin}</p> : null}
               </div>
               <div className="flex gap-2">
+                <Link
+                  href={`/jobs/new?customer=${customer.id}&vehicle=${v.id}`}
+                  className="inline-flex h-9 items-center rounded-lg bg-brand px-3 text-sm font-medium text-ink hover:bg-brand-hover"
+                >
+                  New job
+                </Link>
                 <Button size="sm" onClick={() => setVehicleOpen(v.id)}>
                   Edit
                 </Button>
@@ -173,6 +188,26 @@ export function CustomerDetail({ customer, justAdded }: { customer: CustomerWith
           ),
         )}
       </div>
+
+      {jobs.length ? (
+        <div className="mt-8">
+          <SectionTitle>Jobs</SectionTitle>
+          <Card className="divide-y divide-line overflow-hidden">
+            {jobs.map((j) => {
+              const v = customer.vehicles.find((x) => x.id === j.vehicle_id);
+              return (
+                <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-canvas">
+                  <span className="display tabular w-[88px] shrink-0 text-ink">{jobNumber(j)}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-muted">
+                    {[v ? vehicleLabel(v) : null, formatDate(j.invoice_date ?? j.estimate_date)].filter(Boolean).join(" · ")}
+                  </span>
+                  <Badge tone={STATUS_TONE[j.status]}>{STATUS_LABEL[j.status]}</Badge>
+                </Link>
+              );
+            })}
+          </Card>
+        </div>
+      ) : null}
 
       <div className="mt-10 border-t border-line pt-5">
         <Button variant="danger" size="sm" onClick={removeCustomer} disabled={deleting}>

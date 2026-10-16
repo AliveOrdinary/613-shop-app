@@ -1,3 +1,5 @@
+import type { LineKind, Totals } from "./totals";
+
 export type ShopSettings = {
   id: 1;
   shop_name: string;
@@ -87,3 +89,82 @@ export const EMPTY_VEHICLE: VehicleDraft = {
   odometer_km: null,
   notes: "",
 };
+
+
+export type JobStatus = "estimate" | "approved" | "ready" | "invoiced" | "paid" | "declined";
+export type ApprovalMethod = "signed" | "phone" | "in_person" | "email" | "text";
+export type PaymentMethod = "cash" | "debit" | "credit" | "etransfer" | "cheque" | "insurance" | "other";
+export type PartCondition = "new" | "used" | "reconditioned";
+
+/** Condition recorded at drop-off; keys match the checkbox lists in lib/jobs.ts */
+export type Intake = {
+  body?: string[];
+  body_other?: string;
+  mechanical?: string[];
+  mechanical_other?: string;
+  lights?: string[];
+  lights_other?: string;
+};
+
+export type Job = {
+  id: string;
+  number: number;
+  status: JobStatus;
+  customer_id: string;
+  vehicle_id: string;
+  concern: string;
+  estimate_date: string;
+  valid_until: string | null;
+  expected_completion: string | null;
+  odometer_in: number | null;
+  odometer_out: number | null;
+  intake: Intake;
+  belongings: string;
+  is_insurance: boolean;
+  insurer: string;
+  claim_number: string;
+  deductible: number;
+  insurer_pays: number | null;
+  discount: number;
+  hst_rate: number;
+  shop_supplies_pct: number | null;
+  shop_supplies_cap: number | null;
+  technician: string;
+  bay: string;
+  work_started_at: string | null;
+  work_finished_at: string | null;
+  tech_notes: string;
+  notes: string;
+  approved_at: string | null;
+  approval_method: ApprovalMethod | null;
+  approved_total: number | null;
+  invoice_date: string | null;
+  invoiced_at: string | null;
+  invoice_totals: Totals | null;
+  paid_at: string | null;
+  payment_method: PaymentMethod | null;
+  payment_reference: string;
+  amount_paid: number;
+  declined_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type JobLine = {
+  id: string;
+  job_id: string;
+  position: number;
+  kind: LineKind;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  markup_pct: number;
+  part_condition: PartCondition | null;
+  oem: boolean | null;
+  part_number: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type JobWithLines = Job & { job_lines: JobLine[] };
+export type JobFull = JobWithLines & { customer: Customer; vehicle: Vehicle };

@@ -171,3 +171,65 @@ export function Stripes({ className }: { className?: string }) {
     </span>
   );
 }
+
+/** A simple modal. Sits above the page; tapping the backdrop or Escape closes it. */
+export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-end justify-center bg-ink/50 p-0 sm:items-center sm:p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+    >
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:rounded-2xl">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="display text-xl text-ink">{title}</h2>
+          <button onClick={onClose} className="-mr-2 flex h-10 w-10 items-center justify-center rounded-lg text-muted hover:bg-canvas" aria-label="Close">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** A row of checkbox chips: tap to toggle. */
+export function ChipToggles({ options, value, onChange, disabled }: { options: string[]; value: string[]; onChange: (v: string[]) => void; disabled?: boolean }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((o) => {
+        const on = value.includes(o);
+        return (
+          <button
+            key={o}
+            type="button"
+            role="checkbox"
+            aria-checked={on}
+            disabled={disabled}
+            onClick={() => onChange(on ? value.filter((x) => x !== o) : [...value, o])}
+            className={cx(
+              "inline-flex h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-colors disabled:opacity-60",
+              on ? "border-ink bg-ink text-white" : "border-line bg-surface text-charcoal hover:border-faint",
+            )}
+          >
+            {on ? (
+              <svg viewBox="0 0 24 24" className="h-4 w-4 text-brand" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden>
+                <path d="m5 12 5 5 9-10" />
+              </svg>
+            ) : null}
+            {o}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
