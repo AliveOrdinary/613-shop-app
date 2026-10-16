@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+/*
+ * 613 Automotive brand.
+ * Ink + charcoal + 613 yellow come straight from the logo. The working area stays light so
+ * forms read well under shop lights. Yellow is for the main action and highlights only:
+ * never yellow text on white (it fails contrast). Warnings are orange so they don't blend
+ * into the brand colour.
+ */
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-display: "Saira", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-ink: #0b0b0b;
+  --color-charcoal: #3b3b3b;
+  --color-muted: #5f5e5a;
+  --color-faint: #9c9b94;
+  --color-line: #e2e1dc;
+  --color-surface: #ffffff;
+  --color-canvas: #f4f4f1;
+
+  --color-brand: #fdce07;
+  --color-brand-hover: #f2c300;
+  --color-brand-soft: #fff5c2;
+  --color-brand-deep: #8a6d00;
+
+  --color-ok: #1e7a4f;
+  --color-ok-soft: #e3f3ea;
+  --color-warn: #b45309;
+  --color-warn-soft: #fdeedd;
+  --color-bad: #b42318;
+  --color-bad-soft: #fde8e6;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+/* Headings, job numbers and totals: the slanted Saira that echoes the 613 wordmark */
+.display {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The three slanted bars from the logo, used as a small graphic accent */
+.stripes {
+  display: inline-flex;
+  gap: 0.2em;
+  transform: skewX(-28deg);
+}
+.stripes > span {
+  display: block;
+  width: 0.35em;
+  height: 1em;
+  background: var(--color-brand);
+}
+
+/* Number inputs: no spinners, they are fiddly on phones */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
