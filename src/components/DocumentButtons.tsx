@@ -2,15 +2,16 @@
 
 import type { JobStatus } from "@/lib/types";
 
-const DOCS: { kind: "estimate" | "work-order" | "invoice"; label: string; prefix: string; when: JobStatus[] }[] = [
+const DOCS: { kind: "estimate" | "work-order" | "invoice" | "inspection"; label: string; prefix: string; when: JobStatus[] }[] = [
   { kind: "estimate", label: "Estimate", prefix: "EST", when: ["estimate", "approved", "ready", "invoiced", "paid", "declined"] },
   { kind: "work-order", label: "Work order", prefix: "RO", when: ["approved", "ready", "invoiced", "paid"] },
   { kind: "invoice", label: "Invoice", prefix: "INV", when: ["invoiced", "paid"] },
+  { kind: "inspection", label: "Inspection", prefix: "INSP", when: ["estimate", "approved", "ready", "invoiced", "paid", "declined"] },
 ];
 
 /** Opens each printable document in a new tab, where it can be printed or saved. */
-export function DocumentButtons({ jobId, number, status }: { jobId: string; number: number; status: JobStatus }) {
-  const docs = DOCS.filter((d) => d.when.includes(status));
+export function DocumentButtons({ jobId, number, status, hasInspection }: { jobId: string; number: number; status: JobStatus; hasInspection: boolean }) {
+  const docs = DOCS.filter((d) => d.when.includes(status) && (d.kind !== "inspection" || hasInspection));
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="mr-1 text-[13px] font-medium text-muted">Print</span>

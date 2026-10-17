@@ -67,3 +67,21 @@ export function formatDate(iso: string | null | undefined): string {
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-CA", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" });
 }
+
+// Final quality check, matching the 613 work order. Keys are stored on the job.
+export const QC_ITEMS: { key: string; label: string }[] = [
+  { key: "road_test", label: "Road test completed" },
+  { key: "brakes", label: "Brakes checked" },
+  { key: "fluids", label: "Fluid levels checked" },
+  { key: "lights", label: "Lights checked" },
+  { key: "codes", label: "Codes checked / cleared" },
+  { key: "panel_fit", label: "Panel fit checked" },
+  { key: "paint", label: "Paint / refinish inspected" },
+  { key: "cleaned", label: "Vehicle cleaned" },
+  { key: "belongings", label: "Belongings checked" },
+  { key: "final", label: "Final inspection done" },
+];
+
+export function qcDone(qc: Record<string, boolean> | null | undefined): number {
+  return QC_ITEMS.filter((i) => qc?.[i.key]).length;
+}

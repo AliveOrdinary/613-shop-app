@@ -8,7 +8,7 @@ import { demo } from "./fixtures/demoJob";
 const out = process.env.PDF_OUT;
 
 describe("job PDFs", () => {
-  for (const kind of ["estimate", "work-order", "invoice"] as DocKind[]) {
+  for (const kind of ["estimate", "work-order", "invoice", "inspection"] as DocKind[]) {
     it(`builds the ${kind}`, () => {
       const buf = Buffer.from(buildJobPdf(kind, demo));
       expect(buf.subarray(0, 5).toString()).toBe("%PDF-");
@@ -23,6 +23,10 @@ describe("job PDFs", () => {
   it("still builds with no lines, no VIN and nothing optional filled in", () => {
     const bare = { ...demo, lines: [], payments: [], vehicle: { ...demo.vehicle, vin: null, plate: "", colour: "" }, job: { ...demo.job, is_insurance: false, concern: "", intake: {}, belongings: "", tech_notes: "", technician: "", invoice_totals: null } };
     for (const kind of ["estimate", "work-order", "invoice"] as DocKind[]) expect(buildJobPdf(kind, bare).byteLength).toBeGreaterThan(10_000);
+  });
+
+  it("refuses an inspection PDF when there's no inspection", () => {
+    expect(() => buildJobPdf("inspection", { ...demo, inspection: null })).toThrow(/No inspection/);
   });
 
   it("names files by document and customer", () => {

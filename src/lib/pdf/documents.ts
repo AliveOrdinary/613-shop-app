@@ -6,11 +6,12 @@ import { jsPDF } from "jspdf";
 import { autoTable, type CellHookData, type RowInput } from "jspdf-autotable";
 import { LOGO_PNG_BASE64, LOGO_SIZE, SAIRA_ITALIC_TTF_BASE64 } from "./assets";
 import { money, vehicleLabel } from "@/lib/format";
-import { APPROVAL_LABEL, INTAKE_BODY, INTAKE_LIGHTS, INTAKE_MECHANICAL, PAYMENT_LABEL, formatDate } from "@/lib/jobs";
+import { APPROVAL_LABEL, INTAKE_BODY, INTAKE_LIGHTS, INTAKE_MECHANICAL, PAYMENT_LABEL, QC_ITEMS, formatDate } from "@/lib/jobs";
+import { DISCLAIMER, SECTIONS } from "@/lib/inspection";
 import { KIND_LABEL, LABOUR_KINDS, jobTotals, lineAmount, type Totals } from "@/lib/totals";
-import type { Customer, Job, JobLine, Payment, ShopSettings, Vehicle } from "@/lib/types";
+import type { Customer, Inspection, Job, JobLine, Payment, ShopSettings, Vehicle } from "@/lib/types";
 
-export type DocKind = "estimate" | "work-order" | "invoice";
+export type DocKind = "estimate" | "work-order" | "invoice" | "inspection";
 
 export type PdfData = {
   job: Job;
@@ -19,6 +20,7 @@ export type PdfData = {
   vehicle: Vehicle;
   payments: Payment[];
   shop: ShopSettings;
+  inspection?: Inspection | null;
 };
 
 type Doc = jsPDF & { lastAutoTable?: { finalY: number } };
@@ -36,8 +38,8 @@ const PAGE_H = 279.4;
 const CONTENT_W = PAGE_W - 2 * M;
 const BOTTOM = PAGE_H - 14; // keep clear of the footer
 
-const PREFIX: Record<DocKind, string> = { estimate: "EST", "work-order": "RO", invoice: "INV" };
-const TITLE: Record<DocKind, string> = { estimate: "ESTIMATE", "work-order": "WORK ORDER", invoice: "INVOICE" };
+const PREFIX: Record<DocKind, string> = { estimate: "EST", "work-order": "RO", invoice: "INV", inspection: "INSP" };
+const TITLE: Record<DocKind, string> = { estimate: "ESTIMATE", "work-order": "WORK ORDER", invoice: "INVOICE", inspection: "INSPECTION" };
 
 export function docNumber(kind: DocKind, job: Pick<Job, "number">): string {
   return `${PREFIX[kind]}-${job.number}`;
@@ -521,28 +523,24 @@ function workOrder(doc: Doc, d: PdfData) {
 
   y = section(doc, ensure(doc, y, 30), "Quality control / final inspection");
   y += 1;
-  const qc = [
-    "Road test completed",
-    "Brakes checked",
-    "Fluid levels checked",
-    "Lights checked",
-    "Codes checked / cleared",
-    "Panel fit checked",
-    "Paint / refinish inspected",
-    "Vehicle cleaned",
-    "Belongings checked",
-    "Final inspection done",
-  ];
   body(doc, 8.5);
   const colW = CONTENT_W / 3;
-  qc.forEach((q, i) => {
+  QC_ITEMS.forEach((q, i) => {
     const cx = M + (i % 3) * colW;
     const cy = y + Math.floor(i / 3) * 5.5;
-    checkbox(doc, cx, cy, false);
+    checkbox(doc, cx, cy, Boolean(job.qc?.[q.key]));
     body(doc, 8.5);
-    doc.text(q, cx + 4.5, cy);
+    doc.text(q.label, cx + 4.5, cy);
   });
-  y += Math.ceil(qc.length / 3) * 5.5 + 4;
+  y += Math.ceil(QC_ITEMS.length / 3) * 5.5 + 1;
+  const qcLine = [job.qc_by ? `Checked by ${job.qc_by}` : "", job.qc_at ? `completed ${formatDate(job.qc_at)}` : ""].filter(Boolean).join(", ");
+  if (qcLine) {
+    body(doc, 8.5, "normal", MUTED);
+    doc.text(qcLine, M, y + 2);
+    y += 5;
+  }
+  if (job.qc_notes?.trim()) y = paragraph(doc, y + 2, `Final notes: ${job.qc_notes.trim()}`, 8.8);
+  y += 4;
 
   authorization(
     doc,
@@ -601,6 +599,74 @@ function invoice(doc: Doc, d: PdfData) {
   doc.text("Thank you for choosing 613 Automotive.", M, y + 4);
 }
 
+function inspectionDoc(doc: Doc, d: PdfData) {
+  const { job, customer, vehicle } = d;
+  const insp = d.inspection;
+  if (!insp) throw new Error("No inspection for this job");
+  let y = header(doc, "inspection", d);
+  const km = insp.odometer_km ?? job.odometer_in;
+  y = infoColumns(doc, y, [
+    customerColumn(customer),
+    { title: "Vehicle", lines: [{ text: vehicleLabel(vehicle), bold: true }, { text: `VIN: ${vehicle.vin ?? "not recorded"}` }, ...(vehicle.plate ? [{ text: `Plate: ${vehicle.plate}` }] : []), ...(km !== null ? [{ text: `Odometer: ${km.toLocaleString("en-CA")} km` }] : [])] },
+    { title: "Inspection", lines: [{ text: `Date: ${formatDate(insp.inspected_on)}` }, { text: `Work order: RO-${job.number}` }, ...(insp.technician ? [{ text: `Technician: ${insp.technician}` }] : [])] },
+  ]);
+  body(doc, 7.8, "normal", MUTED);
+  doc.text("OK = good condition   ATTN = needs attention   URGENT = safety concern, prompt action   N/A = not applicable or not checked", M, y + 1);
+  y += 6;
+
+  const mark = (on: boolean) => (on ? "X" : "");
+  for (const sec of SECTIONS) {
+    y = ensure(doc, y, 22);
+    y = section(doc, y + 1, sec.title);
+    autoTable(doc, {
+      startY: y,
+      margin: { left: M, right: M, top: 26, bottom: 18 },
+      head: [["Item", "OK", "ATTN", "URGENT", "N/A", "Note"]],
+      body: sec.items.map((it) => {
+        const r = insp.results?.[it.key];
+        return [it.label, mark(r?.status === "ok"), mark(r?.status === "attention"), mark(r?.status === "urgent"), mark(r?.status === "na"), r?.note ?? ""];
+      }),
+      theme: "plain",
+      styles: { fontSize: 8.2, textColor: INK, cellPadding: { top: 1.05, bottom: 1.05, left: 1.8, right: 1.8 }, lineColor: RULE, lineWidth: { bottom: 0.2 } },
+      headStyles: { fillColor: SHADE, fontStyle: "bold", fontSize: 7.5 },
+      columnStyles: { 0: { cellWidth: 74 }, 1: { cellWidth: 12, halign: "center" }, 2: { cellWidth: 13, halign: "center" }, 3: { cellWidth: 16, halign: "center" }, 4: { cellWidth: 12, halign: "center" } },
+      didParseCell: (h: CellHookData) => {
+        if (h.section === "head" && h.column.index >= 1 && h.column.index <= 4) h.cell.styles.halign = "center";
+        if (h.section === "body" && h.column.index >= 1 && h.column.index <= 4 && h.cell.raw === "X") {
+          h.cell.styles.fontStyle = "bold";
+          if (h.column.index === 3) h.cell.styles.textColor = [180, 35, 24];
+        }
+      },
+      willDrawPage: (h) => {
+        if (h.pageNumber > 1) continuationHeader(doc);
+      },
+    });
+    y = (doc.lastAutoTable?.finalY ?? y) + 4;
+  }
+
+  y = section(doc, ensure(doc, y + 2, 40), "Technician findings and recommendations");
+  const finding = (title: string, text: string) => {
+    y = ensure(doc, y, 12);
+    body(doc, 8.5, "bold");
+    doc.text(title, M, y);
+    y = paragraph(doc, y + 4.2, text.trim() || "None noted.", 8.8) + 2;
+  };
+  finding("Immediate safety concerns", insp.safety_concerns);
+  finding("Recommended repairs / maintenance", insp.recommendations);
+  finding("Measurements / diagnostic codes", insp.measurements);
+
+  y = ensure(doc, y + 2, 26);
+  body(doc, 8.8);
+  const yn = (v: boolean | null) => (v === null ? "____" : v ? "Yes" : "No");
+  doc.text(`Customer notified: ${yn(insp.customer_notified)}      Customer authorization for recommended work: ${yn(insp.customer_authorized)}`, M, y);
+  y += 14;
+  const half = (CONTENT_W - 10) / 2;
+  signatureLine(doc, M, y, half, `Technician${insp.technician ? `: ${insp.technician}` : ""}`);
+  signatureLine(doc, M + half + 10, y, half, "Date");
+  y = ensure(doc, y + 9, 9);
+  paragraph(doc, y, DISCLAIMER, 7.8, MUTED);
+}
+
 /** Builds one document for a job. */
 export function buildJobPdf(kind: DocKind, d: PdfData): ArrayBuffer {
   const doc = new jsPDF({ unit: "mm", format: "letter", compress: true }) as Doc;
@@ -616,6 +682,7 @@ export function buildJobPdf(kind: DocKind, d: PdfData): ArrayBuffer {
 
   if (kind === "estimate") estimate(doc, d);
   else if (kind === "work-order") workOrder(doc, d);
+  else if (kind === "inspection") inspectionDoc(doc, d);
   else invoice(doc, d);
 
   footer(doc, kind, d);

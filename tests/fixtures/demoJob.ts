@@ -40,6 +40,8 @@ export const demo: PdfData = {
     notes: "", approved_at: "2026-10-14T18:00:00Z", approval_method: "phone",
     invoice_date: "2026-10-17", invoiced_at: t, invoice_totals: null, paid_at: null,
     payment_method: null, payment_reference: "", declined_at: null, created_at: t, updated_at: t,
+    qc: { road_test: true, brakes: true, lights: true, codes: true, panel_fit: true, paint: true, cleaned: true, belongings: true, final: true },
+    qc_notes: "Fluids not checked: collision repair only.", qc_by: "Raj", qc_at: t,
   },
   lines,
   customer: { id: "c1", kind: "person", name: "Priya Raman", company: "", phone: "613-555-0142", email: "priya.raman@example.com", address_line: "48 Union St", city: "Kingston", province: "ON", postal_code: "K7L 2N9", notes: "", created_at: t, updated_at: t },
@@ -55,3 +57,22 @@ export const demo: PdfData = {
   },
 };
 demo.job.invoice_totals = jobTotals(demo.job, lines);
+
+import { ALL_ITEMS } from "@/lib/inspection";
+import type { InspectionResults } from "@/lib/inspection";
+
+const results: InspectionResults = Object.fromEntries(ALL_ITEMS.map((i) => [i.key, { status: "ok" as const }]));
+results.front_pads = { status: "attention", note: "4 mm left" };
+results.rear_tires = { status: "urgent", note: "Cord showing, inner edge left rear" };
+results.spare = { status: "na" };
+results.battery_test = { status: "na" };
+results.obd_scan = { status: "attention", note: "C1A67 radar, cleared after calibration" };
+
+demo.inspection = {
+  job_id: "j1", results,
+  safety_concerns: "Left rear tire worn to the cords on the inner edge. Replace before highway driving.",
+  recommendations: "Replace both rear tires. Front brake pads at 4 mm: plan replacement within 5,000 km. Four-wheel alignment done (sublet).",
+  measurements: "Front pads 4 mm, rear pads 7 mm. Tread: FL 6/32, FR 6/32, RL 2/32 inner, RR 4/32. Code C1A67 cleared after radar calibration.",
+  technician: "Raj", odometer_km: 48210, customer_notified: true, customer_authorized: false,
+  inspected_on: "2026-10-15", created_at: t, updated_at: t,
+};

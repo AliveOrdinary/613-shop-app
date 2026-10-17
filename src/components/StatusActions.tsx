@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button, Field, Input, Modal, Notice, NumberInput, Select } from "./ui";
 import { money } from "@/lib/format";
-import { APPROVAL_LABEL, todayLocal } from "@/lib/jobs";
+import { APPROVAL_LABEL, QC_ITEMS, qcDone, todayLocal } from "@/lib/jobs";
 import type { Totals } from "@/lib/totals";
 import type { ApprovalMethod, Job } from "@/lib/types";
 
@@ -24,7 +24,7 @@ export function StatusActions({
   apply: (patch: Patch, opts?: { vehicleOdometer?: number }) => Promise<string | null>;
   onPay: () => void;
 }) {
-  const [dialog, setDialog] = useState<null | "approve" | "invoice" | "reopen" | "decline">(null);
+  const [dialog, setDialog] = useState<null | "approve" | "invoice" | "reopen" | "decline" | "ready">(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,7 +63,11 @@ export function StatusActions({
       {s === "declined" ? <Button onClick={() => run({ status: "estimate", declined_at: null })}>Back to estimate</Button> : null}
       {s === "approved" ? (
         <>
-          <Button variant="primary" onClick={() => run({ status: "ready", work_finished_at: job.work_finished_at ?? now() })} disabled={busy}>
+          <Button
+            variant="primary"
+            onClick={() => (qcDone(job.qc) < QC_ITEMS.length ? setDialog("ready") : run({ status: "ready", work_finished_at: job.work_finished_at ?? now() }))}
+            disabled={busy}
+          >
             Mark ready for pickup
           </Button>
           <Button variant="ghost" onClick={() => run({ status: "estimate", approved_at: null, approval_method: null, approved_total: null })} disabled={busy}>
@@ -111,6 +115,27 @@ export function StatusActions({
               {busy ? "Saving…" : "Approve — create work order"}
             </Button>
             <Button variant="ghost" onClick={close}>Cancel</Button>
+          </div>
+        </Modal>
+      ) : null}
+
+      {dialog === "ready" ? (
+        <Modal title="Quality check isn't finished" onClose={close}>
+          <p className="mb-2 text-sm text-muted">
+            {qcDone(job.qc)} of {QC_ITEMS.length} quality checks are ticked. Not done yet:
+          </p>
+          <ul className="mb-5 list-disc pl-5 text-sm text-ink">
+            {QC_ITEMS.filter((i) => !job.qc?.[i.key]).map((i) => (
+              <li key={i.key}>{i.label}</li>
+            ))}
+          </ul>
+          <div className="flex gap-2">
+            <Button variant="primary" onClick={close}>
+              Finish the check
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => run({ status: "ready", work_finished_at: job.work_finished_at ?? now() })}>
+              Mark ready anyway
+            </Button>
           </div>
         </Modal>
       ) : null}

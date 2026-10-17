@@ -13,10 +13,11 @@ export default async function JobPage({ params }: PageProps<"/jobs/[id]">) {
   const [{ data, error }, { data: rates }] = await Promise.all([
     sb
       .from("jobs")
-      .select("*, job_lines(*), customer:customers(*), vehicle:vehicles(*), payments(*)")
+      .select("*, job_lines(*), customer:customers(*), vehicle:vehicles(*), payments(*), files:job_files(*), inspection:inspections(*)")
       .eq("id", id)
       .order("position", { referencedTable: "job_lines", ascending: true })
       .order("paid_on", { referencedTable: "payments", ascending: true })
+      .order("created_at", { referencedTable: "job_files", ascending: true })
       .maybeSingle<JobFull>(),
     sb.from("shop_settings").select("rate_body, rate_paint, rate_mechanical, paint_markup_pct").eq("id", 1).single<Rates>(),
   ]);

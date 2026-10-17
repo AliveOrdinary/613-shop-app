@@ -16,6 +16,12 @@ create function auth.uid() returns uuid language sql stable as $$
 $$;
 grant usage on schema auth to authenticated;
 grant execute on function auth.uid() to authenticated;
+create schema storage;
+create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text);
+alter table storage.objects enable row level security;
+grant usage on schema storage to authenticated;
+grant all on storage.objects to authenticated;
 `;
 
 const OWNER = "00000000-0000-0000-0000-00000000000a";
@@ -253,5 +259,54 @@ describe("jobs", () => {
     const { rows } = await as(STRANGER, () => db.query("select * from jobs"));
     expect(rows).toHaveLength(0);
     await expect(as(STRANGER, () => db.query("select * from create_job($1, $2)", [customer, vehicle]))).rejects.toThrow();
+  });
+});
+
+describe("files, inspections and quality check", () => {
+  let jobId = "";
+
+  beforeAll(async () => {
+    await as(OWNER, async () => {
+      const c = await db.query<{ id: string }>("insert into customers (name, phone) values ('Files Test', '1') returning id");
+      const v = await db.query<{ id: string }>("insert into vehicles (customer_id, make) values ($1, 'Mazda') returning id", [c.rows[0].id]);
+      const j = await db.query<{ id: string }>("select id from create_job($1, $2)", [c.rows[0].id, v.rows[0].id]);
+      jobId = j.rows[0].id;
+    });
+  });
+
+  it("creates a private bucket for job files", async () => {
+    const { rows } = await db.query<{ public: boolean }>("select public from storage.buckets where id = 'job-files'");
+    expect(rows).toEqual([{ public: false }]);
+  });
+
+  it("lets staff store files and hides them from everyone else", async () => {
+    await as(OWNER, () => db.query("insert into storage.objects (bucket_id, name) values ('job-files', $1)", [`${jobId}/a.jpg`]));
+    await expect(as(STRANGER, () => db.query("insert into storage.objects (bucket_id, name) values ('job-files', 'x/y.jpg')"))).rejects.toThrow();
+    const mine = await as(OWNER, () => db.query("select name from storage.objects where bucket_id = 'job-files'"));
+    const theirs = await as(STRANGER, () => db.query("select name from storage.objects where bucket_id = 'job-files'"));
+    expect(mine.rows).toHaveLength(1);
+    expect(theirs.rows).toHaveLength(0);
+  });
+
+  it("records photos with a stage and documents without one", async () => {
+    await as(OWNER, () => db.query("insert into job_files (job_id, kind, stage, path) values ($1, 'photo', 'dropoff', $2)", [jobId, `${jobId}/a.jpg`]));
+    await as(OWNER, () => db.query("insert into job_files (job_id, kind, path, mime) values ($1, 'document', $2, 'application/pdf')", [jobId, `${jobId}/b.pdf`]));
+    await expect(as(OWNER, () => db.query("insert into job_files (job_id, kind, stage, path) values ($1, 'document', 'repair', 'c.pdf')", [jobId]))).rejects.toThrow();
+    const theirs = await as(STRANGER, () => db.query("select * from job_files"));
+    expect(theirs.rows).toHaveLength(0);
+  });
+
+  it("keeps one inspection per job, staff only", async () => {
+    await as(OWNER, () => db.query(`insert into inspections (job_id, results) values ($1, '{"oil_level": {"status": "ok"}}')`, [jobId]));
+    await expect(as(OWNER, () => db.query("insert into inspections (job_id) values ($1)", [jobId]))).rejects.toThrow();
+    const theirs = await as(STRANGER, () => db.query("select * from inspections"));
+    expect(theirs.rows).toHaveLength(0);
+  });
+
+  it("removes a job's file records and inspection with the job", async () => {
+    await as(OWNER, () => db.query("delete from jobs where id = $1", [jobId]));
+    const f = await as(OWNER, () => db.query("select 1 from job_files where job_id = $1", [jobId]));
+    const i = await as(OWNER, () => db.query("select 1 from inspections where job_id = $1", [jobId]));
+    expect(f.rows.length + i.rows.length).toBe(0);
   });
 });

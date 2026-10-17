@@ -1,3 +1,4 @@
+import type { InspectionResults } from "./inspection";
 import type { LineKind, Totals } from "./totals";
 
 export type ShopSettings = {
@@ -146,6 +147,10 @@ export type Job = {
   payment_reference: string;
   amount_paid: number;
   declined_at: string | null;
+  qc: Record<string, boolean>;
+  qc_notes: string;
+  qc_by: string;
+  qc_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -180,4 +185,34 @@ export type Payment = {
 };
 
 export type JobWithLines = Job & { job_lines: JobLine[] };
-export type JobFull = JobWithLines & { customer: Customer; vehicle: Vehicle; payments: Payment[] };
+export type JobFull = JobWithLines & { customer: Customer; vehicle: Vehicle; payments: Payment[]; files: JobFile[]; inspection: Inspection | null };
+
+export type PhotoStage = "dropoff" | "repair" | "completed";
+
+export type JobFile = {
+  id: string;
+  job_id: string;
+  kind: "photo" | "document";
+  stage: PhotoStage | null;
+  path: string;
+  name: string;
+  mime: string;
+  size_bytes: number;
+  caption: string;
+  created_at: string;
+};
+
+export type Inspection = {
+  job_id: string;
+  results: InspectionResults;
+  safety_concerns: string;
+  recommendations: string;
+  measurements: string;
+  technician: string;
+  odometer_km: number | null;
+  customer_notified: boolean | null;
+  customer_authorized: boolean | null;
+  inspected_on: string;
+  created_at: string;
+  updated_at: string;
+};

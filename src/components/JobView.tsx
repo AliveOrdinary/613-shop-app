@@ -4,12 +4,16 @@ import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import { LinesEditor, type Rates } from "./LinesEditor";
 import { DocumentButtons } from "./DocumentButtons";
+import { FilesPanel } from "./FilesPanel";
+import { InspectionCard } from "./InspectionCard";
+import { QcPanel, qcSummary } from "./QcPanel";
 import { PaymentsPanel } from "./PaymentsPanel";
 import { StatusActions } from "./StatusActions";
 import { TotalsPanel } from "./TotalsPanel";
 import { Badge, Button, Card, ChipToggles, Modal, Field, Input, Notice, NumberInput, Textarea, cx } from "./ui";
 import { money, vehicleLabel } from "@/lib/format";
 import { APPROVAL_LABEL, INTAKE_BODY, INTAKE_LIGHTS, INTAKE_MECHANICAL, STATUS_LABEL, STATUS_TONE, formatDate, isLocked, jobNumber } from "@/lib/jobs";
+import { deleteAllJobFiles } from "@/lib/files";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { jobTotals } from "@/lib/totals";
 import { useAutosave } from "@/lib/useAutosave";
@@ -39,7 +43,7 @@ function toLocalInput(iso: string | null): string {
 const STEPS: Job["status"][] = ["estimate", "approved", "ready", "invoiced", "paid"];
 
 export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) {
-  const { customer, vehicle, job_lines: initialLines, payments: initialPayments, ...initialJob } = initial;
+  const { customer, vehicle, job_lines: initialLines, payments: initialPayments, files, inspection, ...initialJob } = initial;
   const router = useRouter();
   const [payments, setPayments] = useState<Payment[]>(initialPayments ?? []);
   const [payOpen, setPayOpen] = useState(false);
@@ -82,6 +86,11 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
     setDeleting("busy");
     setDeleteError(null);
     await save.flush();
+    if (payments.length) {
+      setDeleting("ask");
+      return setDeleteError("This job has payments recorded, so it can't be deleted.");
+    }
+    await deleteAllJobFiles(job.id);
     const { error } = await sb.from("jobs").delete().eq("id", job.id);
     if (error) {
       setDeleting("ask");
@@ -147,7 +156,7 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
       ) : null}
 
       <div className="mb-3">
-        <DocumentButtons jobId={job.id} number={job.number} status={job.status} />
+        <DocumentButtons jobId={job.id} number={job.number} status={job.status} hasInspection={inspection !== null} />
       </div>
 
       <div className="mb-6">
@@ -270,6 +279,14 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
             </div>
           </Section>
 
+          <Section title="Photos and files" aside={<span className="text-sm text-muted">{files.length ? `${files.length} saved` : ""}</span>}>
+            <FilesPanel jobId={job.id} initial={files} />
+          </Section>
+
+          <Section title="Mechanical inspection">
+            <InspectionCard jobId={job.id} inspection={inspection} />
+          </Section>
+
           <Section title="Work">
             <div className="grid grid-cols-2 gap-3 p-4">
               <Field label="Technician">
@@ -292,6 +309,12 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
               </Field>
             </div>
           </Section>
+
+          {job.status !== "estimate" && job.status !== "declined" ? (
+            <Section title="Final quality check" aside={<span className="text-sm text-muted">{qcSummary(job)}</span>}>
+              <QcPanel job={job} set={set} />
+            </Section>
+          ) : null}
 
           {job.status === "estimate" || job.status === "declined" ? (
             <div className="border-t border-line pt-5">

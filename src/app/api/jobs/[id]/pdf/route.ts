@@ -6,10 +6,10 @@ import type { JobFull, ShopSettings } from "@/lib/types";
 
 export const maxDuration = 30;
 
-const KINDS: DocKind[] = ["estimate", "work-order", "invoice"];
+const KINDS: DocKind[] = ["estimate", "work-order", "invoice", "inspection"];
 
 /**
- * GET /api/jobs/<id>/pdf?doc=estimate|work-order|invoice[&download=1]
+ * GET /api/jobs/<id>/pdf?doc=estimate|work-order|invoice|inspection[&download=1]
  * Opens in the browser (to print or save); download=1 saves it straight away.
  */
 export async function GET(req: NextRequest, ctx: RouteContext<"/api/jobs/[id]/pdf">) {
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest, ctx: RouteContext<"/api/jobs/[id]/pd
   const [{ data: job, error }, { data: shop }] = await Promise.all([
     sb
       .from("jobs")
-      .select("*, job_lines(*), customer:customers(*), vehicle:vehicles(*), payments(*)")
+      .select("*, job_lines(*), customer:customers(*), vehicle:vehicles(*), payments(*), inspection:inspections(*)")
       .eq("id", id)
       .order("position", { referencedTable: "job_lines", ascending: true })
       .order("paid_on", { referencedTable: "payments", ascending: true })
@@ -39,8 +39,13 @@ export async function GET(req: NextRequest, ctx: RouteContext<"/api/jobs/[id]/pd
     return NextResponse.json({ error: "This job hasn't been invoiced yet" }, { status: 409 });
   }
 
-  const { job_lines, customer, vehicle, payments, ...rest } = job;
-  const data: PdfData = { job: rest, lines: job_lines, customer, vehicle, payments: payments ?? [], shop };
+  if (kind === "inspection" && !job.inspection) {
+    return NextResponse.json({ error: "This job has no inspection yet" }, { status: 409 });
+  }
+
+  const { job_lines, customer, vehicle, payments, inspection, files: _files, ...rest } = job;
+  void _files;
+  const data: PdfData = { job: rest, lines: job_lines, customer, vehicle, payments: payments ?? [], shop, inspection };
   const name = pdfFileName(kind, data);
   const disposition = req.nextUrl.searchParams.get("download") ? "attachment" : "inline";
 

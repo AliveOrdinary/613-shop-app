@@ -10,7 +10,7 @@ export type SaveState = "idle" | "saving" | "saved" | "error";
  * tablet doesn't send a request per key. `flush` writes immediately (call it before a
  * status change or when leaving the page).
  */
-export function useAutosave(table: "jobs" | "job_lines", id: string, delay = 700) {
+export function useAutosave(table: "jobs" | "job_lines" | "inspections", id: string, delay = 700, keyColumn = "id") {
   const pending = useRef<Record<string, unknown>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [state, setState] = useState<SaveState>("idle");
@@ -23,7 +23,7 @@ export function useAutosave(table: "jobs" | "job_lines", id: string, delay = 700
     pending.current = {};
     if (Object.keys(patch).length === 0) return true;
     setState("saving");
-    const { error } = await supabaseBrowser().from(table).update(patch).eq("id", id);
+    const { error } = await supabaseBrowser().from(table).update(patch).eq(keyColumn, id);
     if (error) {
       // Keep the unsaved values so the next change retries them
       pending.current = { ...patch, ...pending.current };
@@ -34,7 +34,7 @@ export function useAutosave(table: "jobs" | "job_lines", id: string, delay = 700
     setState("saved");
     setError(null);
     return true;
-  }, [table, id]);
+  }, [table, id, keyColumn]);
 
   const queue = useCallback(
     (patch: Record<string, unknown>) => {
