@@ -6,13 +6,14 @@ import { LinesEditor, type Rates } from "./LinesEditor";
 import { DocumentButtons } from "./DocumentButtons";
 import { FilesPanel } from "./FilesPanel";
 import { InspectionCard } from "./InspectionCard";
+import { JumpBar, type JumpItem } from "./JumpBar";
 import { QcPanel, qcSummary } from "./QcPanel";
 import { PaymentsPanel } from "./PaymentsPanel";
 import { StatusActions } from "./StatusActions";
 import { TotalsPanel } from "./TotalsPanel";
 import { Badge, Button, Card, ChipToggles, Modal, Field, Input, Notice, NumberInput, Textarea, cx } from "./ui";
 import { money, vehicleLabel } from "@/lib/format";
-import { APPROVAL_LABEL, INTAKE_BODY, INTAKE_LIGHTS, INTAKE_MECHANICAL, STATUS_LABEL, STATUS_TONE, formatDate, isLocked, jobNumber } from "@/lib/jobs";
+import { APPROVAL_LABEL, INTAKE_BODY, INTAKE_LIGHTS, INTAKE_MECHANICAL, QC_ITEMS, STATUS_LABEL, STATUS_TONE, formatDate, isLocked, jobNumber, qcDone } from "@/lib/jobs";
 import { deleteAllJobFiles } from "@/lib/files";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { jobTotals } from "@/lib/totals";
@@ -20,15 +21,18 @@ import { useAutosave } from "@/lib/useAutosave";
 import type { Intake, Job, JobFull, JobLine, Payment } from "@/lib/types";
 import { useRouter } from "next/navigation";
 
-function Section({ title, aside, children, className }: { title: string; aside?: ReactNode; children: ReactNode; className?: string }) {
+function Section({ id, title, aside, children, className }: { id: string; title: string; aside?: ReactNode; children: ReactNode; className?: string }) {
+  // scroll-mt clears the top bar and the jump bar when jumping here
   return (
-    <Card className={cx("overflow-hidden", className)}>
-      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-        <h2 className="font-semibold text-ink">{title}</h2>
-        {aside}
-      </div>
-      {children}
-    </Card>
+    <section id={id} className="scroll-mt-32">
+      <Card className={cx("overflow-hidden", className)}>
+        <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+          <h2 className="font-semibold text-ink">{title}</h2>
+          {aside}
+        </div>
+        {children}
+      </Card>
+    </section>
   );
 }
 
@@ -115,6 +119,18 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
 
   const intake = job.intake ?? {};
   const stepIndex = STEPS.indexOf(job.status);
+  const showQc = job.status !== "estimate" && job.status !== "declined";
+  const jumps: JumpItem[] = [
+    { id: "sec-concern", label: "Concern" },
+    { id: "sec-lines", label: "Lines", note: String(lines.length) },
+    { id: "sec-insurance", label: "Insurance" },
+    { id: "sec-dropoff", label: "Drop-off" },
+    { id: "sec-photos", label: "Photos" },
+    { id: "sec-inspection", label: "Inspection" },
+    { id: "sec-work", label: "Work" },
+    ...(showQc ? [{ id: "sec-qc", label: "Quality check", note: `${qcDone(job.qc)}/${QC_ITEMS.length}` }] : []),
+    { id: "totals", label: locked || payments.length ? "Totals & payments" : "Totals", phoneOnly: true },
+  ];
 
   return (
     <div className="pb-20 lg:pb-6">
@@ -171,6 +187,8 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
         </div>
       ) : null}
 
+      <JumpBar items={jumps} />
+
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
           {/* Customer and vehicle */}
@@ -188,7 +206,7 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
             </div>
           </Card>
 
-          <Section title="Customer's concern">
+          <Section id="sec-concern" title="Customer's concern">
             <div className="space-y-4 p-4">
               <Field label="What the customer wants done" hint="Printed on the estimate and work order.">
                 <Textarea rows={3} value={job.concern} onChange={(e) => set("concern", e.target.value)} disabled={locked} placeholder="Rear bumper scuffed in parking lot; replace textured trim and refinish." />
@@ -208,13 +226,14 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
           </Section>
 
           <Section
+            id="sec-lines"
             title="Line items"
             aside={<span className="tabular text-sm text-muted">{lines.length} {lines.length === 1 ? "line" : "lines"}</span>}
           >
             <LinesEditor jobId={job.id} lines={lines} setLines={setLines} rates={rates} locked={locked} />
           </Section>
 
-          <Section title="Insurance">
+          <Section id="sec-insurance" title="Insurance">
             <div className="space-y-4 p-4">
               <label className="flex cursor-pointer items-start gap-3">
                 <input type="checkbox" checked={job.is_insurance} onChange={(e) => set("is_insurance", e.target.checked)} disabled={locked} className="mt-0.5 h-5 w-5 accent-ink" />
@@ -242,7 +261,7 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
             </div>
           </Section>
 
-          <Section title="Vehicle at drop-off">
+          <Section id="sec-dropoff" title="Vehicle at drop-off">
             <div className="space-y-5 p-4">
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Odometer in (km)">
@@ -281,15 +300,15 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
             </div>
           </Section>
 
-          <Section title="Photos and files" aside={<span className="text-sm text-muted">{files.length ? `${files.length} saved` : ""}</span>}>
+          <Section id="sec-photos" title="Photos and files" aside={<span className="text-sm text-muted">{files.length ? `${files.length} saved` : ""}</span>}>
             <FilesPanel jobId={job.id} initial={files} />
           </Section>
 
-          <Section title="Mechanical inspection">
+          <Section id="sec-inspection" title="Mechanical inspection">
             <InspectionCard jobId={job.id} inspection={inspection} />
           </Section>
 
-          <Section title="Work">
+          <Section id="sec-work" title="Work">
             <div className="grid grid-cols-2 gap-3 p-4">
               <Field label="Technician">
                 <Input value={job.technician} onChange={(e) => set("technician", e.target.value)} />
@@ -312,8 +331,8 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
             </div>
           </Section>
 
-          {job.status !== "estimate" && job.status !== "declined" ? (
-            <Section title="Final quality check" aside={<span className="text-sm text-muted">{qcSummary(job)}</span>}>
+          {showQc ? (
+            <Section id="sec-qc" title="Final quality check" aside={<span className="text-sm text-muted">{qcSummary(job)}</span>}>
               <QcPanel job={job} set={set} />
             </Section>
           ) : null}
@@ -328,7 +347,7 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
           ) : null}
         </div>
 
-        <aside id="totals" className="scroll-mt-20 lg:sticky lg:top-20 lg:self-start">
+        <aside id="totals" className="scroll-mt-32 lg:sticky lg:top-20 lg:self-start">
           <TotalsPanel
             totals={totals}
             hstRate={Number(job.hst_rate)}
