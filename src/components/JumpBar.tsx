@@ -49,8 +49,14 @@ export function JumpBar({ items }: { items: JumpItem[] }) {
   // Keep the highlighted chip visible when the row scrolls sideways on a phone
   useEffect(() => {
     if (!active || !bar.current) return;
-    const chip = bar.current.querySelector<HTMLElement>(`[data-jump="${active}"]`);
-    chip?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const row = bar.current;
+    const chip = row.querySelector<HTMLElement>(`[data-jump="${active}"]`);
+    if (!chip) return;
+    // Scroll only the row sideways. scrollIntoView here would cancel the page's smooth scroll.
+    const left = chip.offsetLeft - row.offsetLeft;
+    if (left < row.scrollLeft || left + chip.offsetWidth > row.scrollLeft + row.clientWidth) {
+      row.scrollTo({ left: Math.max(0, left - 16), behavior: "smooth" });
+    }
   }, [active]);
 
   function go(id: string) {

@@ -347,7 +347,7 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
           ) : null}
         </div>
 
-        <aside id="totals" className="scroll-mt-32 lg:sticky lg:top-20 lg:self-start">
+        <aside id="totals" className="scroll-mt-32 lg:sticky lg:top-32 lg:self-start">
           <TotalsPanel
             totals={totals}
             hstRate={Number(job.hst_rate)}
