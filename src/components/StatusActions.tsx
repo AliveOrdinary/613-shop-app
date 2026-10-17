@@ -23,7 +23,7 @@ export function StatusActions({
 }: {
   job: Job;
   totals: Totals;
-  /** The shop's HST number from Settings; CRA wants it on invoices of $500 or more */
+  /** The shop's HST number from Settings; CRA wants it on invoices of $100 or more */
   hstNumber: string;
   apply: (patch: Patch, opts?: { vehicleOdometer?: number }) => Promise<string | null>;
   onPay: () => void;
@@ -175,10 +175,10 @@ export function StatusActions({
             <span className="text-charcoal">Invoice total</span>
             <span className="display tabular text-xl text-ink">{money(totals.total)}</span>
           </div>
-          {totals.total >= 500 && !hstNumber.trim() ? (
+          {totals.total >= 100 && !hstNumber.trim() ? (
             <div className="mb-3">
               <Notice tone="warn">
-                The shop&apos;s HST number isn&apos;t set, so it won&apos;t print on this invoice. CRA requires it on invoices of $500 or more.{" "}
+                The shop&apos;s HST number isn&apos;t set, so it won&apos;t print on this invoice. CRA requires it on invoices of $100 or more.{" "}
                 <Link href="/settings" className="font-medium underline underline-offset-2">
                   Add it in Settings
                 </Link>
