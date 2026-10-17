@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { Field, Input, Textarea, cx } from "./ui";
 import { QC_ITEMS, qcDone } from "@/lib/jobs";
 import type { Job } from "@/lib/types";
@@ -8,12 +9,19 @@ import type { Job } from "@/lib/types";
 export function QcPanel({ job, set }: { job: Job; set: <K extends keyof Job>(k: K, v: Job[K]) => void }) {
   const qc = job.qc ?? {};
   const done = qcDone(qc);
+  // Latest ticks, so two quick taps before a re-render both stick
+  const live = useRef<Record<string, boolean>>(qc);
+  const complete = useRef(Boolean(job.qc_at));
 
   function toggle(key: string) {
-    const next = { ...qc, [key]: !qc[key] };
+    const next = { ...live.current, [key]: !live.current[key] };
+    live.current = next;
     set("qc", next);
-    if (qcDone(next) === QC_ITEMS.length && !job.qc_at) set("qc_at", new Date().toISOString());
-    if (qcDone(next) < QC_ITEMS.length && job.qc_at) set("qc_at", null);
+    const all = qcDone(next) === QC_ITEMS.length;
+    if (all !== complete.current) {
+      complete.current = all;
+      set("qc_at", all ? new Date().toISOString() : null);
+    }
   }
 
   return (

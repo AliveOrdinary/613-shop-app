@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { LinesEditor, type Rates } from "./LinesEditor";
 import { DocumentButtons } from "./DocumentButtons";
 import { FilesPanel } from "./FilesPanel";
@@ -59,9 +59,11 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
     setJob((j) => ({ ...j, [k]: v }));
     save.queue({ [k]: v });
   };
+  // Builds on the latest intake, so quick taps on two chips don't overwrite each other
+  const intakeLive = useRef<Intake>(initial.intake);
   const setIntake = (patch: Partial<Intake>) => {
-    const next = { ...job.intake, ...patch };
-    set("intake", next);
+    intakeLive.current = { ...intakeLive.current, ...patch };
+    set("intake", intakeLive.current);
   };
 
   const live = useMemo(() => jobTotals(job, lines), [job, lines]);

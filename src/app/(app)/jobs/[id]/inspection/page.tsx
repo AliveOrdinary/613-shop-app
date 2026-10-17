@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { InspectionView } from "@/components/InspectionView";
+import { jobNumber } from "@/lib/jobs";
 import { supabaseServer } from "@/lib/supabase/server";
 import type { Customer, Inspection, Job, Vehicle } from "@/lib/types";
 
@@ -35,5 +36,5 @@ export default async function InspectionPage({ params }: PageProps<"/jobs/[id]/i
     inspection = created.data;
   }
 
-  return <InspectionView jobId={id} jobNumber={data.number} customerName={data.customer.name} vehicle={data.vehicle} initial={inspection} />;
+  return <InspectionView jobId={id} jobLabel={jobNumber(data)} customerName={data.customer.name} vehicle={data.vehicle} initial={inspection} />;
 }

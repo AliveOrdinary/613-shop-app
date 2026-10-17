@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button, Card, Field, Input, NumberInput, Textarea, cx } from "./ui";
 import { vehicleLabel } from "@/lib/format";
 import { ALL_ITEMS, DISCLAIMER, SECTIONS, STATUS_HINT, STATUS_LABEL, summarize, type InspectionResults, type InspectionStatus } from "@/lib/inspection";
@@ -43,13 +43,13 @@ function YesNo({ label, value, onChange }: { label: string; value: boolean | nul
 
 export function InspectionView({
   jobId,
-  jobNumber,
+  jobLabel,
   customerName,
   vehicle,
   initial,
 }: {
   jobId: string;
-  jobNumber: number;
+  jobLabel: string;
   customerName: string;
   vehicle: Vehicle;
   initial: Inspection;
@@ -63,31 +63,41 @@ export function InspectionView({
     setInsp((x) => ({ ...x, [k]: v }));
     save.queue({ [k]: v });
   };
-  const setResults = (next: InspectionResults) => set("results", next);
+  // Every change builds on the latest results, not the last render's, so two quick taps
+  // (or "Mark all OK" on two sections) before a re-render don't overwrite each other.
+  const live = useRef<InspectionResults>(initial.results ?? {});
+  const update = (fn: (r: InspectionResults) => InspectionResults) => {
+    live.current = fn(live.current);
+    set("results", live.current);
+  };
 
   function mark(key: string, status: InspectionStatus) {
-    const cur = results[key];
-    const next = { ...results };
-    if (cur?.status === status) delete next[key];
-    else next[key] = { status, ...(cur?.note && status !== "ok" && status !== "na" ? { note: cur.note } : {}) };
-    setResults(next);
+    update((r) => {
+      const cur = r[key];
+      const next = { ...r };
+      if (cur?.status === status) delete next[key];
+      else next[key] = { status, ...(cur?.note && status !== "ok" && status !== "na" ? { note: cur.note } : {}) };
+      return next;
+    });
   }
 
   function note(key: string, text: string) {
-    setResults({ ...results, [key]: { ...results[key], note: text } });
+    update((r) => ({ ...r, [key]: { ...r[key], note: text } }));
   }
 
   function restOk(sectionKey: string) {
     const sec = SECTIONS.find((s) => s.key === sectionKey)!;
-    const next = { ...results };
-    for (const it of sec.items) if (!next[it.key]) next[it.key] = { status: "ok" };
-    setResults(next);
+    update((r) => {
+      const next = { ...r };
+      for (const it of sec.items) if (!next[it.key]) next[it.key] = { status: "ok" };
+      return next;
+    });
   }
 
   return (
     <div className="pb-24">
       <Link href={`/jobs/${jobId}`} className="mb-2 inline-block text-sm text-muted hover:text-ink">
-        ← RO-{jobNumber}
+        ← {jobLabel}
       </Link>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
