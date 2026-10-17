@@ -8,7 +8,7 @@ import { StatusActions } from "./StatusActions";
 import { TotalsPanel } from "./TotalsPanel";
 import { Badge, Button, Card, ChipToggles, Modal, Field, Input, Notice, NumberInput, Textarea, cx } from "./ui";
 import { money, vehicleLabel } from "@/lib/format";
-import { APPROVAL_LABEL, INTAKE_BODY, INTAKE_LIGHTS, INTAKE_MECHANICAL, PAYMENT_LABEL, STATUS_LABEL, STATUS_TONE, formatDate, isLocked, jobNumber } from "@/lib/jobs";
+import { APPROVAL_LABEL, INTAKE_BODY, INTAKE_LIGHTS, INTAKE_MECHANICAL, STATUS_LABEL, STATUS_TONE, formatDate, isLocked, jobNumber } from "@/lib/jobs";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { jobTotals } from "@/lib/totals";
 import { useAutosave } from "@/lib/useAutosave";
@@ -125,7 +125,7 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
                 ? `Invoiced ${formatDate(job.invoice_date)}`
                 : `Estimate ${formatDate(job.estimate_date)}`}
             {job.approved_at && job.approval_method ? ` · Approved ${formatDate(job.approved_at)} (${APPROVAL_LABEL[job.approval_method].toLowerCase()})` : ""}
-            {job.paid_at && job.payment_method ? ` · Paid ${formatDate(job.paid_at)} by ${PAYMENT_LABEL[job.payment_method].toLowerCase()}` : ""}
+            {job.status === "paid" && job.paid_at ? ` · Paid in full ${formatDate(job.paid_at)}` : ""}
           </p>
         </div>
         <span className="pt-1 text-xs text-muted" aria-live="polite">
