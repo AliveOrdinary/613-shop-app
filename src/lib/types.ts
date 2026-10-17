@@ -166,5 +166,18 @@ export type JobLine = {
   updated_at: string;
 };
 
+export type Payer = "customer" | "insurer" | "other";
+
+export type Payment = {
+  id: string;
+  job_id: string;
+  paid_on: string;
+  amount: number;
+  payer: Payer;
+  method: PaymentMethod;
+  reference: string;
+  created_at: string;
+};
+
 export type JobWithLines = Job & { job_lines: JobLine[] };
-export type JobFull = JobWithLines & { customer: Customer; vehicle: Vehicle };
+export type JobFull = JobWithLines & { customer: Customer; vehicle: Vehicle; payments: Payment[] };

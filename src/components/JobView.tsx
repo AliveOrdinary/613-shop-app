@@ -3,15 +3,17 @@
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import { LinesEditor, type Rates } from "./LinesEditor";
+import { PaymentsPanel } from "./PaymentsPanel";
 import { StatusActions } from "./StatusActions";
 import { TotalsPanel } from "./TotalsPanel";
-import { Badge, Card, ChipToggles, Field, Input, Notice, NumberInput, Textarea, cx } from "./ui";
+import { Badge, Button, Card, ChipToggles, Modal, Field, Input, Notice, NumberInput, Textarea, cx } from "./ui";
 import { money, vehicleLabel } from "@/lib/format";
 import { APPROVAL_LABEL, INTAKE_BODY, INTAKE_LIGHTS, INTAKE_MECHANICAL, PAYMENT_LABEL, STATUS_LABEL, STATUS_TONE, formatDate, isLocked, jobNumber } from "@/lib/jobs";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { jobTotals } from "@/lib/totals";
 import { useAutosave } from "@/lib/useAutosave";
-import type { Intake, Job, JobFull, JobLine } from "@/lib/types";
+import type { Intake, Job, JobFull, JobLine, Payment } from "@/lib/types";
+import { useRouter } from "next/navigation";
 
 function Section({ title, aside, children, className }: { title: string; aside?: ReactNode; children: ReactNode; className?: string }) {
   return (
@@ -36,7 +38,12 @@ function toLocalInput(iso: string | null): string {
 const STEPS: Job["status"][] = ["estimate", "approved", "ready", "invoiced", "paid"];
 
 export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) {
-  const { customer, vehicle, job_lines: initialLines, ...initialJob } = initial;
+  const { customer, vehicle, job_lines: initialLines, payments: initialPayments, ...initialJob } = initial;
+  const router = useRouter();
+  const [payments, setPayments] = useState<Payment[]>(initialPayments ?? []);
+  const [payOpen, setPayOpen] = useState(false);
+  const [deleting, setDeleting] = useState<"ask" | "busy" | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [job, setJob] = useState<Job>(initialJob);
   const [lines, setLines] = useState<JobLine[]>(initialLines);
   const save = useAutosave("jobs", job.id);
@@ -59,6 +66,29 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
     const paid = Number(job.amount_paid) || 0;
     return { ...job.invoice_totals, amountPaid: paid, balance: Math.round((job.invoice_totals.total - paid) * 100) / 100 };
   }, [locked, job.invoice_totals, job.amount_paid, live]);
+
+  /** After a payment is added or removed: the database works out the job's paid status. */
+  async function reloadPayments() {
+    const [{ data: j }, { data: ps }] = await Promise.all([
+      sb.from("jobs").select("*").eq("id", job.id).single<Job>(),
+      sb.from("payments").select("*").eq("job_id", job.id).order("paid_on").returns<Payment[]>(),
+    ]);
+    if (j) setJob(j);
+    if (ps) setPayments(ps);
+  }
+
+  async function deleteJob() {
+    setDeleting("busy");
+    setDeleteError(null);
+    await save.flush();
+    const { error } = await sb.from("jobs").delete().eq("id", job.id);
+    if (error) {
+      setDeleting("ask");
+      return setDeleteError(error.code === "23503" ? "This job has payments recorded, so it can't be deleted." : error.message);
+    }
+    router.replace("/jobs");
+    router.refresh();
+  }
 
   async function apply(patch: Partial<Job>, opts?: { vehicleOdometer?: number }): Promise<string | null> {
     if (!(await save.flush())) return save.error ?? "Couldn't save your last changes.";
@@ -85,13 +115,13 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
         <div>
           <div className="flex items-center gap-3">
             <h1 className="display tabular text-[30px] leading-none text-ink">{jobNumber(job)}</h1>
-            <Badge tone={STATUS_TONE[job.status]}>{STATUS_LABEL[job.status]}</Badge>
+            <Badge tone={STATUS_TONE[job.status]}>{job.status === "invoiced" && Number(job.amount_paid) > 0 ? "Part paid" : STATUS_LABEL[job.status]}</Badge>
             {job.is_insurance ? <Badge>Insurance</Badge> : null}
           </div>
           <p className="mt-1.5 text-sm text-muted">
             {job.status === "declined"
               ? `Declined ${formatDate(job.declined_at)}`
-              : job.invoice_date
+              : locked && job.invoice_date
                 ? `Invoiced ${formatDate(job.invoice_date)}`
                 : `Estimate ${formatDate(job.estimate_date)}`}
             {job.approved_at && job.approval_method ? ` · Approved ${formatDate(job.approved_at)} (${APPROVAL_LABEL[job.approval_method].toLowerCase()})` : ""}
@@ -116,7 +146,7 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
       ) : null}
 
       <div className="mb-6">
-        <StatusActions job={job} totals={live} apply={apply} />
+        <StatusActions job={job} totals={live} apply={apply} onPay={() => setPayOpen(true)} />
       </div>
 
       {locked ? (
@@ -257,6 +287,15 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
               </Field>
             </div>
           </Section>
+
+          {job.status === "estimate" || job.status === "declined" ? (
+            <div className="border-t border-line pt-5">
+              <Button variant="danger" size="sm" onClick={() => setDeleting("ask")}>
+                Delete {jobNumber(job)}
+              </Button>
+              <p className="mt-2 text-xs text-muted">Only estimates and declined jobs can be deleted. Invoices stay on file as tax records.</p>
+            </div>
+          ) : null}
         </div>
 
         <aside id="totals" className="scroll-mt-20 lg:sticky lg:top-20 lg:self-start">
@@ -265,14 +304,31 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
             hstRate={Number(job.hst_rate)}
             isInsurance={job.is_insurance}
             approvedTotal={job.approved_total === null ? null : Number(job.approved_total)}
-            paid={job.status === "paid"}
+            paid={false}
             locked={locked}
             discount={Number(job.discount)}
             onDiscount={(n) => set("discount", n)}
           />
-          {job.payment_reference ? <p className="mt-2 px-1 text-sm text-muted">Payment reference: {job.payment_reference}</p> : null}
+          {locked || payments.length ? (
+            <PaymentsPanel job={job} totals={totals} payments={payments} open={payOpen} onOpen={setPayOpen} onChanged={reloadPayments} />
+          ) : null}
         </aside>
       </div>
+
+      {deleting ? (
+        <Modal title={`Delete ${jobNumber(job)}?`} onClose={() => { setDeleting(null); setDeleteError(null); }}>
+          <p className="mb-4 text-sm text-muted">
+            The estimate for {customer.name}&apos;s {vehicleLabel(vehicle)} and its {lines.length} {lines.length === 1 ? "line" : "lines"} will be deleted. This can&apos;t be undone. The number {job.number} won&apos;t be reused.
+          </p>
+          {deleteError ? <div className="mb-3"><Notice tone="bad">{deleteError}</Notice></div> : null}
+          <div className="flex gap-2">
+            <Button variant="danger" onClick={deleteJob} disabled={deleting === "busy"}>
+              {deleting === "busy" ? "Deleting…" : "Delete job"}
+            </Button>
+            <Button variant="ghost" onClick={() => { setDeleting(null); setDeleteError(null); }}>Keep it</Button>
+          </div>
+        </Modal>
+      ) : null}
 
       {/* Phones: the total stays in view while editing lines */}
       <a

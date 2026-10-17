@@ -23,7 +23,7 @@ export type JobRow = TotalsJob & {
 
 const FILTERS: { key: string; label: string; statuses: JobStatus[] }[] = [
   { key: "open", label: "In the shop", statuses: ["estimate", "approved", "ready"] },
-  { key: "unpaid", label: "Unpaid", statuses: ["invoiced"] },
+  { key: "unpaid", label: "Unpaid", statuses: ["invoiced"] }, // includes part paid
   { key: "paid", label: "Paid", statuses: ["paid"] },
   { key: "declined", label: "Declined", statuses: ["declined"] },
   { key: "all", label: "All", statuses: ["estimate", "approved", "ready", "invoiced", "paid", "declined"] },
@@ -115,7 +115,7 @@ export function JobsView({ jobs }: { jobs: JobRow[] }) {
                 <p className="truncate font-medium text-ink">{j.customer.name}</p>
                 <p className="truncate text-sm text-muted">{[vehicleLabel(j.vehicle), j.vehicle.plate].filter(Boolean).join(" · ")}</p>
                 <span className="mt-1 flex flex-wrap gap-1 sm:hidden">
-                  <Badge tone={STATUS_TONE[j.status]}>{STATUS_LABEL[j.status]}</Badge>
+                  <Badge tone={STATUS_TONE[j.status]}>{j.status === "invoiced" && Number(j.amount_paid) > 0 ? "Part paid" : STATUS_LABEL[j.status]}</Badge>
                   {j.is_insurance ? <Badge>Insurance</Badge> : null}
                 </span>
               </div>
@@ -123,7 +123,7 @@ export function JobsView({ jobs }: { jobs: JobRow[] }) {
                 <span className="tabular font-medium text-ink">{money(total)}</span>
                 <span className="hidden gap-1 sm:flex">
                   {j.is_insurance ? <Badge>Insurance</Badge> : null}
-                  <Badge tone={STATUS_TONE[j.status]}>{STATUS_LABEL[j.status]}</Badge>
+                  <Badge tone={STATUS_TONE[j.status]}>{j.status === "invoiced" && Number(j.amount_paid) > 0 ? "Part paid" : STATUS_LABEL[j.status]}</Badge>
                 </span>
               </div>
             </Link>

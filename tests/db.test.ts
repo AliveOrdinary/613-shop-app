@@ -179,8 +179,58 @@ describe("jobs", () => {
     // Notes can still change
     await upd("tech_notes = 'Customer picked up'");
 
-    await expect(upd("status = 'paid'")).rejects.toThrow(/how the invoice was paid/);
-    await upd("status = 'paid', payment_method = 'debit', amount_paid = 214.70, paid_at = now()");
+    await expect(upd("status = 'paid'")).rejects.toThrow(/isn't fully paid/);
+    const pay = (amount: number, payer = "customer") =>
+      as(OWNER, () => db.query("insert into payments (job_id, amount, payer, method) values ($1, $2, $3, 'debit')", [j.id, amount, payer]));
+    const state = async () =>
+      (await as(OWNER, () => db.query<{ status: string; amount_paid: string; paid_at: string | null }>("select status, amount_paid, paid_at from jobs where id = $1", [j.id]))).rows[0];
+
+    // Deductible first: still unpaid
+    await pay(100);
+    expect(await state()).toMatchObject({ status: "invoiced", amount_paid: "100.00", paid_at: null });
+    // Insurer pays the rest: paid
+    await pay(114.7, "insurer");
+    const paid = await state();
+    expect(paid.status).toBe("paid");
+    expect(paid.paid_at).not.toBeNull();
+    // No more payments once it's paid
+    await expect(pay(1)).rejects.toThrow(/unpaid invoice/);
+    // Removing a payment puts it back to unpaid
+    await as(OWNER, () => db.query("delete from payments where job_id = $1 and payer = 'insurer'", [j.id]));
+    expect(await state()).toMatchObject({ status: "invoiced", amount_paid: "100.00", paid_at: null });
+    // A job with payments can't be deleted, even after going back to estimate
+    await expect(as(OWNER, () => db.query("delete from jobs where id = $1", [j.id]))).rejects.toThrow(/estimates and declined/);
+  });
+
+  it("deletes estimates and declined jobs only", async () => {
+    const a = await create();
+    await as(OWNER, () => db.query("insert into job_lines (job_id, kind, quantity, unit_price) values ($1, 'fee', 1, 10)", [a.id]));
+    await as(OWNER, () => db.query("delete from jobs where id = $1", [a.id]));
+    const { rows } = await as(OWNER, () => db.query("select 1 from jobs where id = $1", [a.id]));
+    expect(rows).toHaveLength(0);
+
+    const b = await create();
+    await as(OWNER, () => db.query("update jobs set status = 'declined', declined_at = now() where id = $1", [b.id]));
+    await as(OWNER, () => db.query("delete from jobs where id = $1", [b.id]));
+
+    const c = await create();
+    await as(OWNER, () => db.query("update jobs set status = 'approved', approval_method = 'phone', approved_total = 0 where id = $1", [c.id]));
+    await expect(as(OWNER, () => db.query("delete from jobs where id = $1", [c.id]))).rejects.toThrow(/estimates and declined/);
+  });
+
+  it("issues an invoice already covered by earlier payments as paid", async () => {
+    const j = await create();
+    const upd = (sql: string) => as(OWNER, () => db.query(`update jobs set ${sql} where id = $1`, [j.id]));
+    await upd("status = 'approved', approval_method = 'signed', approved_total = 100, approved_at = now()");
+    await upd("status = 'ready'");
+    await upd(`status = 'invoiced', invoice_date = current_date, invoice_totals = '{"total": 100}'`);
+    await as(OWNER, () => db.query("insert into payments (job_id, amount, method) values ($1, 100, 'cash')", [j.id]));
+    // Reopen to correct (e.g. a discount), re-invoice for less: already covered
+    await upd("status = 'ready'");
+    await upd("discount = 20");
+    await upd(`status = 'invoiced', invoice_date = current_date, invoice_totals = '{"total": 90}'`);
+    const { rows } = await as(OWNER, () => db.query<{ status: string }>("select status from jobs where id = $1", [j.id]));
+    expect(rows[0].status).toBe("paid");
   });
 
   it("reopens an invoice for correction under the same number and unlocks it", async () => {

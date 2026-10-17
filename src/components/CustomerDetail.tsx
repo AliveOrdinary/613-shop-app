@@ -40,7 +40,10 @@ export function CustomerDetail({ customer, jobs, justAdded }: { customer: Custom
   const [vehicleOpen, setVehicleOpen] = useState<string | null>(justAdded && customer.vehicles.length === 0 ? "new" : null);
   const [deleting, setDeleting] = useState(false);
 
-  const address = [customer.address_line, [customer.city, customer.province].filter(Boolean).join(", "), customer.postal_code].filter(Boolean).join(" · ");
+  const hasAddress = Boolean(customer.address_line || customer.city || customer.postal_code);
+  const address = hasAddress
+    ? [customer.address_line, [customer.city, customer.province].filter(Boolean).join(", "), customer.postal_code].filter(Boolean).join(" · ")
+    : "";
 
   async function done() {
     setEditing(false);

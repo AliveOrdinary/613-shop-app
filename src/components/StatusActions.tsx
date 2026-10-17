@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { Button, Field, Input, Modal, Notice, NumberInput, Select } from "./ui";
 import { money } from "@/lib/format";
-import { APPROVAL_LABEL, PAYMENT_LABEL, todayLocal } from "@/lib/jobs";
+import { APPROVAL_LABEL, todayLocal } from "@/lib/jobs";
 import type { Totals } from "@/lib/totals";
-import type { ApprovalMethod, Job, PaymentMethod } from "@/lib/types";
+import type { ApprovalMethod, Job } from "@/lib/types";
 
 type Patch = Partial<Job>;
 
@@ -17,12 +17,14 @@ export function StatusActions({
   job,
   totals,
   apply,
+  onPay,
 }: {
   job: Job;
   totals: Totals;
   apply: (patch: Patch, opts?: { vehicleOdometer?: number }) => Promise<string | null>;
+  onPay: () => void;
 }) {
-  const [dialog, setDialog] = useState<null | "approve" | "invoice" | "pay" | "reopen" | "decline">(null);
+  const [dialog, setDialog] = useState<null | "approve" | "invoice" | "reopen" | "decline">(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,9 +33,6 @@ export function StatusActions({
   const [odoIn, setOdoIn] = useState<number | null>(job.odometer_in);
   const [odoOut, setOdoOut] = useState<number | null>(job.odometer_out);
   const [extraOk, setExtraOk] = useState(false);
-  const [payMethod, setPayMethod] = useState<PaymentMethod>(job.is_insurance ? "insurance" : "debit");
-  const [payRef, setPayRef] = useState("");
-  const [payAmount, setPayAmount] = useState<number | null>(null);
 
   async function run(patch: Patch, opts?: { vehicleOdometer?: number }) {
     setBusy(true);
@@ -83,18 +82,13 @@ export function StatusActions({
         </>
       ) : null}
       {s === "invoiced" ? (
-        <>
-          <Button variant="primary" onClick={() => { setPayAmount(totals.total); setDialog("pay"); }}>
-            Record payment
-          </Button>
-          <Button variant="ghost" onClick={() => setDialog("reopen")}>
-            Reopen for correction
-          </Button>
-        </>
+        <Button variant="primary" onClick={onPay}>
+          Record payment
+        </Button>
       ) : null}
-      {s === "paid" ? (
-        <Button variant="ghost" onClick={() => run({ status: "invoiced", paid_at: null, payment_method: null, payment_reference: "", amount_paid: 0 })} disabled={busy}>
-          Undo payment
+      {s === "invoiced" || s === "paid" ? (
+        <Button variant="ghost" onClick={() => setDialog("reopen")}>
+          Reopen for correction
         </Button>
       ) : null}
       {error && !dialog ? <div className="w-full"><Notice tone="bad">{error}</Notice></div> : null}
@@ -188,41 +182,10 @@ export function StatusActions({
         </Modal>
       ) : null}
 
-      {dialog === "pay" ? (
-        <Modal title="Record payment" onClose={close}>
-          <div className="grid gap-3">
-            <Field label="Paid by">
-              <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value as PaymentMethod)}>
-                {(Object.keys(PAYMENT_LABEL) as PaymentMethod[]).map((m) => (
-                  <option key={m} value={m}>{PAYMENT_LABEL[m]}</option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Amount paid ($)" hint={job.is_insurance ? `Insurance ${money(totals.insurerPays)} + customer ${money(totals.customerPays)}` : undefined}>
-              <NumberInput value={payAmount} onValue={setPayAmount} min={0} step="0.01" />
-            </Field>
-            <Field label="Reference (optional)" hint="Last 4 digits, e-transfer reference or cheque number. Never the full card number.">
-              <Input value={payRef} onChange={(e) => setPayRef(e.target.value)} maxLength={40} />
-            </Field>
-          </div>
-          {error ? <div className="mt-3"><Notice tone="bad">{error}</Notice></div> : null}
-          <div className="mt-5 flex gap-2">
-            <Button
-              variant="primary"
-              disabled={busy || payAmount === null}
-              onClick={() => run({ status: "paid", payment_method: payMethod, payment_reference: payRef.trim(), amount_paid: payAmount ?? 0, paid_at: now() })}
-            >
-              {busy ? "Saving…" : "Mark paid"}
-            </Button>
-            <Button variant="ghost" onClick={close}>Cancel</Button>
-          </div>
-        </Modal>
-      ) : null}
-
       {dialog === "reopen" ? (
         <Modal title="Reopen for correction" onClose={close}>
           <p className="mb-5 text-sm text-muted">
-            INV-{job.number} goes back to Ready so you can fix lines or amounts, then invoice it again under the same number. If the customer already has a printed copy, give them the corrected one.
+            INV-{job.number} goes back to Ready so you can fix lines or amounts, then invoice it again under the same number. Payments already recorded stay on the job. If the customer already has a printed copy, give them the corrected one.
           </p>
           <div className="flex gap-2">
             <Button variant="primary" disabled={busy} onClick={() => run({ status: "ready" })}>Reopen</Button>
