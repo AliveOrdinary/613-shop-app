@@ -2,8 +2,10 @@
 
 Estimates, work orders, inspection checklists and invoices for 613 Automotive (collision, paint and mechanical). Built for the front desk and for phones and tablets in the bay.
 
-**Built so far:** branding, sign-in, shop settings, customers and vehicles, jobs (estimate → approved → ready → invoiced → paid) with line items, insurance split and totals.
-**Next:** photos and insurer PDFs on a job, the mechanical inspection checklist and final quality check, then the printable PDFs.
+**Built so far:** branding, sign-in, shop settings, customers and vehicles, jobs (estimate → approved → ready → invoiced → paid) with line items, insurance split, payments and totals, and printable PDFs (estimate, work order, invoice).
+**Next:** photos and insurer PDFs on a job, the mechanical inspection checklist and final quality check.
+
+PDFs are built in `src/lib/pdf/documents.ts` and served from `/api/jobs/<id>/pdf?doc=estimate|work-order|invoice`. To look at them without the app: `PDF_OUT=out npm test -- tests/pdf.test.ts` writes the three documents for a sample job into `out/`. After changing the logo, run `python3 scripts/pdf-assets.py`.
 
 All money is worked out in one place, `src/lib/totals.ts`, which the screens (and later the PDFs) share. Its tests include 613's own sample estimate.
 

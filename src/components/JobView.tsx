@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import { LinesEditor, type Rates } from "./LinesEditor";
+import { DocumentButtons } from "./DocumentButtons";
 import { PaymentsPanel } from "./PaymentsPanel";
 import { StatusActions } from "./StatusActions";
 import { TotalsPanel } from "./TotalsPanel";
@@ -144,6 +145,10 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
           ))}
         </ol>
       ) : null}
+
+      <div className="mb-3">
+        <DocumentButtons jobId={job.id} number={job.number} status={job.status} />
+      </div>
 
       <div className="mb-6">
         <StatusActions job={job} totals={live} apply={apply} onPay={() => setPayOpen(true)} />
