@@ -1,6 +1,7 @@
 "use client";
 
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { createPortal } from "react-dom";
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -172,9 +173,14 @@ export function Stripes({ className }: { className?: string }) {
   );
 }
 
-/** A simple modal. Sits above the page; tapping the backdrop or Escape closes it. */
+/**
+ * A simple modal. Sits above the page; tapping the backdrop or Escape closes it.
+ * Rendered at the end of <body> so it isn't trapped under a sticky parent (the totals column)
+ * or covered by the sticky bars.
+ */
 export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return (
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div
       className="fixed inset-0 z-40 flex items-end justify-center bg-ink/50 p-0 sm:items-center sm:p-4"
       onMouseDown={(e) => {
@@ -198,7 +204,8 @@ export function Modal({ title, children, onClose }: { title: string; children: R
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
