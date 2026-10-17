@@ -46,7 +46,7 @@ function toLocalInput(iso: string | null): string {
 
 const STEPS: Job["status"][] = ["estimate", "approved", "ready", "invoiced", "paid"];
 
-export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) {
+export function JobView({ initial, rates, hstNumber }: { initial: JobFull; rates: Rates; hstNumber: string }) {
   const { customer, vehicle, job_lines: initialLines, payments: initialPayments, files, inspection, ...initialJob } = initial;
   const router = useRouter();
   const [payments, setPayments] = useState<Payment[]>(initialPayments ?? []);
@@ -178,7 +178,7 @@ export function JobView({ initial, rates }: { initial: JobFull; rates: Rates }) 
       </div>
 
       <div className="mb-6">
-        <StatusActions job={job} totals={live} apply={apply} onPay={() => setPayOpen(true)} />
+        <StatusActions job={job} totals={live} apply={apply} onPay={() => setPayOpen(true)} hstNumber={hstNumber} />
       </div>
 
       {locked ? (

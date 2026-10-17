@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Button, Field, Input, Modal, Notice, NumberInput, Select } from "./ui";
 import { money } from "@/lib/format";
@@ -18,9 +19,12 @@ export function StatusActions({
   totals,
   apply,
   onPay,
+  hstNumber,
 }: {
   job: Job;
   totals: Totals;
+  /** The shop's HST number from Settings; CRA wants it on invoices of $500 or more */
+  hstNumber: string;
   apply: (patch: Patch, opts?: { vehicleOdometer?: number }) => Promise<string | null>;
   onPay: () => void;
 }) {
@@ -171,6 +175,16 @@ export function StatusActions({
             <span className="text-charcoal">Invoice total</span>
             <span className="display tabular text-xl text-ink">{money(totals.total)}</span>
           </div>
+          {totals.total >= 500 && !hstNumber.trim() ? (
+            <div className="mb-3">
+              <Notice tone="warn">
+                The shop&apos;s HST number isn&apos;t set, so it won&apos;t print on this invoice. CRA requires it on invoices of $500 or more.{" "}
+                <Link href="/settings" className="font-medium underline underline-offset-2">
+                  Add it in Settings
+                </Link>
+              </Notice>
+            </div>
+          ) : null}
           {totals.overEstimate ? (
             <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-lg bg-warn-soft px-3 py-2.5 text-sm text-warn">
               <input type="checkbox" checked={extraOk} onChange={(e) => setExtraOk(e.target.checked)} className="mt-0.5 h-5 w-5 accent-ink" />
