@@ -23,27 +23,31 @@ export function JumpBar({ items }: { items: JumpItem[] }) {
   const ids = items.map((i) => i.id).join("|");
 
   useEffect(() => {
-    const els = ids
-      .split("|")
-      .map((id) => document.getElementById(id))
-      .filter((el): el is HTMLElement => el !== null);
-    if (!els.length) return;
-    const visible = new Map<string, number>();
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) visible.set(e.target.id, e.boundingClientRect.top);
-          else visible.delete(e.target.id);
-        }
-        // The topmost section in the reading band wins
-        const top = [...visible.entries()].sort((a, b) => a[1] - b[1])[0];
-        if (top) setActive(top[0]);
-      },
-      // The band just below the top bar and this bar
-      { rootMargin: "-120px 0px -55% 0px" },
-    );
-    els.forEach((el) => io.observe(el));
-    return () => io.disconnect();
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      // The current section is the last one whose top has reached the line under the bars.
+      // Sections whose chip is hidden (the totals column on wide screens) don't count.
+      let current: string | null = null;
+      for (const id of ids.split("|")) {
+        const el = document.getElementById(id);
+        const chip = bar.current?.querySelector<HTMLElement>(`[data-jump="${id}"]`);
+        if (!el || !chip || chip.offsetParent === null) continue;
+        if (el.getBoundingClientRect().top <= 140) current = id;
+      }
+      setActive(current);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
   }, [ids]);
 
   // Keep the highlighted chip visible when the row scrolls sideways on a phone
