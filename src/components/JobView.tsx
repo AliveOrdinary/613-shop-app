@@ -201,7 +201,8 @@ export function JobView({ initial, rates, hstNumber }: { initial: JobFull; rates
             <div className="min-w-0">
               <p className="text-[13px] text-muted">Vehicle</p>
               <p className="display truncate text-ink">{vehicleLabel(vehicle)}</p>
-              <p className="truncate text-sm text-muted">{[vehicle.plate, vehicle.colour, vehicle.engine].filter(Boolean).join(" · ")}</p>
+              <p className="truncate text-sm text-muted">{[vehicle.plate, vehicle.colour].filter(Boolean).join(" · ")}</p>
+              {vehicle.engine ? <p className="truncate text-sm text-muted">{vehicle.engine}</p> : null}
               {vehicle.vin ? <p className="truncate font-mono text-xs tracking-wider text-charcoal">{vehicle.vin}</p> : <p className="text-xs text-warn">No VIN yet. Ontario requires it on estimates and invoices.</p>}
             </div>
           </Card>
