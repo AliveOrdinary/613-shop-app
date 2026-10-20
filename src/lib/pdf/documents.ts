@@ -232,8 +232,17 @@ function customerColumn(c: Customer) {
   };
 }
 
-function vehicleColumn(v: Vehicle, job: Job, withOut: boolean) {
-  const km = (n: number | null) => (n === null ? null : `${n.toLocaleString("en-CA")} km`);
+/**
+ * `withOut` adds the odometer-out line (invoice). `writeIn` prints a missing reading as a line to
+ * fill in by pen, since the shop doesn't require readings in the app but Ontario expects them on
+ * the invoice; without it a missing reading is left off (an estimate given before drop-off).
+ */
+export function odometerText(n: number | null, writeIn: boolean): string | null {
+  return n === null ? (writeIn ? "________ km" : null) : `${n.toLocaleString("en-CA")} km`;
+}
+
+function vehicleColumn(v: Vehicle, job: Job, withOut: boolean, writeIn: boolean) {
+  const km = (n: number | null) => odometerText(n, writeIn);
   return {
     title: "Vehicle",
     lines: [
@@ -409,7 +418,7 @@ function estimate(doc: Doc, d: PdfData) {
   let y = header(doc, "estimate", d);
   y = infoColumns(doc, y, [
     customerColumn(customer),
-    vehicleColumn(vehicle, job, false),
+    vehicleColumn(vehicle, job, false, false),
     {
       title: "Estimate",
       lines: [
@@ -455,7 +464,7 @@ function workOrder(doc: Doc, d: PdfData) {
   const approved = job.approved_at && job.approval_method ? `${formatDate(job.approved_at)} (${APPROVAL_LABEL[job.approval_method].toLowerCase()})` : "Not yet approved";
   y = infoColumns(doc, y, [
     customerColumn(customer),
-    vehicleColumn(vehicle, job, false),
+    vehicleColumn(vehicle, job, false, true),
     {
       title: "Work order",
       lines: [
@@ -555,7 +564,7 @@ function invoice(doc: Doc, d: PdfData) {
   let y = header(doc, "invoice", d);
   y = infoColumns(doc, y, [
     { ...customerColumn(customer), title: "Bill to" },
-    vehicleColumn(vehicle, job, true),
+    vehicleColumn(vehicle, job, true, true),
     {
       title: "Invoice",
       lines: [

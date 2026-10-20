@@ -170,7 +170,13 @@ export function StatusActions({
               <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
             </Field>
           </div>
-          <p className="mt-2 text-xs text-muted">Ontario requires both odometer readings on the invoice.</p>
+          {odoIn === null || odoOut === null ? (
+            <div className="mt-3">
+              <Notice tone="warn">
+                {odoIn === null && odoOut === null ? "Both odometer readings are" : odoIn === null ? "Odometer in is" : "Odometer out is"} blank. Ontario expects both on the invoice; a blank prints as a line to fill in by hand.
+              </Notice>
+            </div>
+          ) : null}
           <div className="my-4 flex items-baseline justify-between rounded-lg bg-canvas px-3 py-2.5">
             <span className="text-charcoal">Invoice total</span>
             <span className="display tabular text-xl text-ink">{money(totals.total)}</span>
@@ -197,7 +203,7 @@ export function StatusActions({
           <div className="flex gap-2">
             <Button
               variant="primary"
-              disabled={busy || odoIn === null || odoOut === null || (totals.overEstimate && !extraOk)}
+              disabled={busy || (totals.overEstimate && !extraOk)}
               onClick={() => {
                 if (odoIn !== null && odoOut !== null && odoOut < odoIn) return setError("Odometer out is lower than odometer in.");
                 void run(
@@ -210,7 +216,8 @@ export function StatusActions({
                     invoice_totals: { ...totals, overEstimate: false },
                     ...(totals.overEstimate ? { approved_total: totals.total } : {}),
                   },
-                  { vehicleOdometer: odoOut ?? undefined },
+                  // The vehicle keeps the latest reading there is, for its next job
+                  { vehicleOdometer: odoOut ?? odoIn ?? undefined },
                 );
               }}
             >
