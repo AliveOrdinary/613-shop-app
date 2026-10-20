@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { SignOutButton } from "./SignOutButton";
+import { ChangePassword } from "./ChangePassword";
 import { Button, Card, Field, Input, Notice, NumberInput, PageTitle, Textarea, cx } from "./ui";
 import { formatPhone, formatPostal, money } from "@/lib/format";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -193,9 +194,14 @@ export function SettingsView({ initial, email }: { initial: ShopSettings; email:
         </Section>
 
         <Section title="Account">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-muted">Signed in as {email ?? "staff"}</p>
-            <SignOutButton />
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted">Signed in as {email ?? "staff"}</p>
+              <SignOutButton />
+            </div>
+            <div className="border-t border-line pt-4">
+              <ChangePassword email={email} />
+            </div>
           </div>
         </Section>
       </div>
