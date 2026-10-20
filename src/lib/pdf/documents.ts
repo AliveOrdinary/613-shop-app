@@ -239,7 +239,7 @@ function vehicleColumn(v: Vehicle, job: Job, withOut: boolean) {
     lines: [
       { text: vehicleLabel(v), bold: true },
       { text: `VIN: ${v.vin ?? "not recorded"}` },
-      ...[kv("Plate", v.plate), kv("Colour", v.colour), kv("Odometer in", km(job.odometer_in)), withOut ? kv("Odometer out", km(job.odometer_out)) : null].filter(
+      ...[kv("Plate", v.plate), kv("Colour", v.colour), kv("Engine", v.engine), kv("Odometer in", km(job.odometer_in)), withOut ? kv("Odometer out", km(job.odometer_out)) : null].filter(
         (x): x is { text: string } => x !== null,
       ),
     ],
@@ -607,7 +607,7 @@ function inspectionDoc(doc: Doc, d: PdfData) {
   const km = insp.odometer_km ?? job.odometer_in;
   y = infoColumns(doc, y, [
     customerColumn(customer),
-    { title: "Vehicle", lines: [{ text: vehicleLabel(vehicle), bold: true }, { text: `VIN: ${vehicle.vin ?? "not recorded"}` }, ...(vehicle.plate ? [{ text: `Plate: ${vehicle.plate}` }] : []), ...(km !== null ? [{ text: `Odometer: ${km.toLocaleString("en-CA")} km` }] : [])] },
+    { title: "Vehicle", lines: [{ text: vehicleLabel(vehicle), bold: true }, { text: `VIN: ${vehicle.vin ?? "not recorded"}` }, ...(vehicle.plate ? [{ text: `Plate: ${vehicle.plate}` }] : []), ...(vehicle.engine ? [{ text: `Engine: ${vehicle.engine}` }] : []), ...(km !== null ? [{ text: `Odometer: ${km.toLocaleString("en-CA")} km` }] : [])] },
     { title: "Inspection", lines: [{ text: `Date: ${formatDate(insp.inspected_on)}` }, { text: `Work order: RO-${job.number}` }, ...(insp.technician ? [{ text: `Technician: ${insp.technician}` }] : [])] },
   ]);
   body(doc, 7.8, "normal", MUTED);

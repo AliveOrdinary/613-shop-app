@@ -17,8 +17,8 @@ function draftOf(c: CustomerWithVehicles): CustomerDraft {
 }
 
 function vehicleDraftOf(v: Vehicle): VehicleDraft {
-  const { year, make, model, trim, vin, plate, colour, odometer_km, notes } = v;
-  return { year, make, model, trim, vin, plate, colour, odometer_km, notes };
+  const { year, make, model, trim, engine, vin, plate, colour, odometer_km, notes } = v;
+  return { year, make, model, trim, engine, vin, plate, colour, odometer_km, notes };
 }
 
 function Detail({ label, children }: { label: string; children: React.ReactNode }) {
@@ -169,7 +169,7 @@ export function CustomerDetail({ customer, jobs, justAdded }: { customer: Custom
               <div className="min-w-0">
                 <p className="display text-lg leading-tight text-ink">{vehicleLabel(v)}</p>
                 <p className="mt-1 text-sm text-muted">
-                  {[v.plate && `Plate ${v.plate}`, v.colour, v.odometer_km !== null && `${v.odometer_km.toLocaleString("en-CA")} km`].filter(Boolean).join(" · ") || "No plate or colour yet"}
+                  {[v.plate && `Plate ${v.plate}`, v.colour, v.engine, v.odometer_km !== null && `${v.odometer_km.toLocaleString("en-CA")} km`].filter(Boolean).join(" · ") || "No plate or colour yet"}
                 </p>
                 {v.vin ? <p className="mt-1 font-mono text-sm tracking-wider text-charcoal">{v.vin}</p> : null}
               </div>

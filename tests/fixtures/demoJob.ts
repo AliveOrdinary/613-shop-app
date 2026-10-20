@@ -45,7 +45,7 @@ export const demo: PdfData = {
   },
   lines,
   customer: { id: "c1", kind: "person", name: "Priya Raman", company: "", phone: "613-555-0142", email: "priya.raman@example.com", address_line: "48 Union St", city: "Kingston", province: "ON", postal_code: "K7L 2N9", notes: "", created_at: t, updated_at: t },
-  vehicle: { id: "v1", customer_id: "c1", year: 2021, make: "Toyota", model: "RAV4", trim: "XLE AWD", vin: "2T3P1RFV8MW123456", plate: "CKLM 123", colour: "Magnetic Grey", odometer_km: 48236, notes: "", created_at: t, updated_at: t },
+  vehicle: { id: "v1", customer_id: "c1", year: 2021, make: "Toyota", model: "RAV4", trim: "XLE AWD", engine: "2.5L 4-cyl · 4WD", vin: "2T3P1RFV8MW123456", plate: "CKLM 123", colour: "Magnetic Grey", odometer_km: 48236, notes: "", created_at: t, updated_at: t },
   payments: [{ id: "p1", job_id: "j1", paid_on: "2026-10-17", amount: 500, payer: "customer", method: "debit", reference: "4421", created_at: t }],
   shop: {
     id: 1, shop_name: "613 Automotive", address_line: "780 Burnett St #4", city: "Kingston", province: "ON", postal_code: "K7M 5W3",

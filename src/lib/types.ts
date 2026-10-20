@@ -51,6 +51,8 @@ export type Vehicle = {
   make: string;
   model: string;
   trim: string;
+  /** Engine and drive, e.g. "2.0L 4-cyl · FWD" */
+  engine: string;
   vin: string | null;
   plate: string;
   colour: string;
@@ -84,6 +86,7 @@ export const EMPTY_VEHICLE: VehicleDraft = {
   make: "",
   model: "",
   trim: "",
+  engine: "",
   vin: null,
   plate: "",
   colour: "",

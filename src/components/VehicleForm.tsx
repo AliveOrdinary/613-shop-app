@@ -1,9 +1,22 @@
 "use client";
 
-import { useState } from "react";
-import { Button, Field, Input, Notice, NumberInput, Textarea } from "./ui";
+import { useEffect, useId, useState } from "react";
+import { Button, Field, Input, Notice, NumberInput, Spinner, Textarea } from "./ui";
 import { checkVin, normalizeVin, vinModelYear } from "@/lib/vin";
+import { MAKES, decodeVin, lookupLabel, modelsFor, type VinLookup } from "@/lib/vpic";
 import type { VehicleDraft } from "@/lib/types";
+
+type Lookup = { vin: string; result: VinLookup | null | "error" };
+
+/** The lookup's values that differ from what's in the form (empty lookup values never count) */
+function differences(d: VehicleDraft, l: VinLookup): Partial<VehicleDraft> {
+  const out: Partial<VehicleDraft> = {};
+  if (l.year !== null && d.year !== l.year) out.year = l.year;
+  for (const k of ["make", "model", "trim", "engine"] as const) {
+    if (l[k] && d[k].trim() !== l[k]) out[k] = l[k];
+  }
+  return out;
+}
 
 export function VehicleForm({
   initial,
@@ -20,6 +33,9 @@ export function VehicleForm({
   const [vinText, setVinText] = useState(initial.vin ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lookup, setLookup] = useState<Lookup | null>(null);
+  const [models, setModels] = useState<{ key: string; list: string[] } | null>(null);
+  const ids = useId();
   const set = <K extends keyof VehicleDraft>(k: K, v: VehicleDraft[K]) => setD((x) => ({ ...x, [k]: v }));
 
   const vin = normalizeVin(vinText);
@@ -32,9 +48,58 @@ export function VehicleForm({
         ? "VIN looks right."
         : "The check digit doesn't match. Fine for some imports; otherwise check for a typo.";
 
+  // Look a complete VIN up once, and fill in only the fields that are still empty
+  const lookupVin = vin && vinCheck?.ok ? vin : null;
+  useEffect(() => {
+    if (!lookupVin) return;
+    const ctrl = new AbortController();
+    decodeVin(lookupVin, ctrl.signal)
+      .then((result) => {
+        setLookup({ vin: lookupVin, result });
+        if (!result) return;
+        setD((x) => ({
+          ...x,
+          year: x.year ?? result.year,
+          make: x.make.trim() ? x.make : result.make,
+          model: x.model.trim() ? x.model : result.model,
+          trim: x.trim.trim() ? x.trim : result.trim,
+          engine: x.engine.trim() ? x.engine : result.engine,
+        }));
+      })
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setLookup({ vin: lookupVin, result: "error" });
+      });
+    return () => ctrl.abort();
+  }, [lookupVin]);
+
+  const current = lookup && lookup.vin === lookupVin ? lookup.result : undefined;
+  const looking = lookupVin !== null && current === undefined;
+  const found = current && current !== "error" ? current : null;
+  const better = found ? differences(d, found) : {};
+
+  // Model suggestions for the make and year, after a short pause in typing
+  const make = d.make.trim();
+  const modelKey = make && d.year ? `${make.toLowerCase()}|${d.year}` : null;
+  useEffect(() => {
+    if (!modelKey) return;
+    const [m, y] = modelKey.split("|");
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      modelsFor(m, Number(y), ctrl.signal)
+        .then((list) => setModels({ key: modelKey, list }))
+        .catch(() => undefined);
+    }, 400);
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [modelKey]);
+  const modelList = models && models.key === modelKey ? models.list : [];
+
   function onVinBlur() {
     setVinText(vin ?? "");
-    // Fill the year from the VIN when it's blank
+    // Fill the year from the VIN when it's blank (works even when the lookup can't be reached)
     if (vin && vinCheck?.ok && d.year === null) set("year", vinModelYear(vin));
   }
 
@@ -47,6 +112,7 @@ export function VehicleForm({
       make: d.make.trim(),
       model: d.model.trim(),
       trim: d.trim.trim(),
+      engine: d.engine.trim(),
       plate: d.plate.trim().toUpperCase(),
       colour: d.colour.trim(),
       notes: d.notes.trim(),
@@ -63,30 +129,54 @@ export function VehicleForm({
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <Field label="VIN" hint={vinHint}>
-        <Input
-          value={vinText}
-          onChange={(e) => setVinText(e.target.value.toUpperCase())}
-          onBlur={onVinBlur}
-          autoCapitalize="characters"
-          autoCorrect="off"
-          spellCheck={false}
-          maxLength={20}
-          className="font-mono tracking-wider"
-        />
-      </Field>
+      <div>
+        <Field label="VIN" hint={vinHint}>
+          <Input
+            value={vinText}
+            onChange={(e) => setVinText(e.target.value.toUpperCase())}
+            onBlur={onVinBlur}
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={20}
+            className="font-mono tracking-wider"
+          />
+        </Field>
+        {looking ? (
+          <p className="mt-2 flex items-center gap-2 text-sm text-muted">
+            <Spinner /> Looking up the VIN…
+          </p>
+        ) : found ? (
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-canvas px-3 py-2 text-sm">
+            <span className="text-muted">Found:</span>
+            <span className="font-medium text-ink">{lookupLabel(found)}</span>
+            {Object.keys(better).length ? (
+              <button type="button" onClick={() => setD((x) => ({ ...x, ...better }))} className="font-medium text-ink underline underline-offset-4">
+                Use these
+              </button>
+            ) : null}
+          </div>
+        ) : current === null ? (
+          <p className="mt-2 text-sm text-muted">The VIN lookup doesn&apos;t know this one. Fill in the details by hand.</p>
+        ) : current === "error" ? (
+          <p className="mt-2 text-sm text-muted">Couldn&apos;t reach the VIN lookup. Fill in the details by hand.</p>
+        ) : null}
+      </div>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <Field label="Year">
           <NumberInput value={d.year} onValue={(v) => set("year", v)} inputMode="numeric" min={1900} max={2100} step="1" />
         </Field>
         <Field label="Make">
-          <Input value={d.make} onChange={(e) => set("make", e.target.value)} placeholder="Toyota" />
+          <Input value={d.make} onChange={(e) => set("make", e.target.value)} placeholder="Toyota" list={`${ids}-makes`} autoComplete="off" />
         </Field>
         <Field label="Model">
-          <Input value={d.model} onChange={(e) => set("model", e.target.value)} placeholder="RAV4" />
+          <Input value={d.model} onChange={(e) => set("model", e.target.value)} placeholder="RAV4" list={`${ids}-models`} autoComplete="off" />
         </Field>
         <Field label="Trim">
           <Input value={d.trim} onChange={(e) => set("trim", e.target.value)} placeholder="XLE" />
+        </Field>
+        <Field label="Engine" hint="Filled from the VIN when it's known." className="col-span-2">
+          <Input value={d.engine} onChange={(e) => set("engine", e.target.value)} placeholder="2.5L 4-cyl · AWD" />
         </Field>
         <Field label="Licence plate">
           <Input value={d.plate} onChange={(e) => set("plate", e.target.value.toUpperCase())} autoCapitalize="characters" />
@@ -97,10 +187,20 @@ export function VehicleForm({
         <Field label="Odometer (km)" className="col-span-2">
           <NumberInput value={d.odometer_km} onValue={(v) => set("odometer_km", v)} inputMode="numeric" min={0} step="1" />
         </Field>
-        <Field label="Notes" className="col-span-2 md:col-span-4">
+        <Field label="Notes" className="col-span-2">
           <Textarea rows={2} value={d.notes} onChange={(e) => set("notes", e.target.value)} />
         </Field>
       </div>
+      <datalist id={`${ids}-makes`}>
+        {MAKES.map((m) => (
+          <option key={m} value={m} />
+        ))}
+      </datalist>
+      <datalist id={`${ids}-models`}>
+        {modelList.map((m) => (
+          <option key={m} value={m} />
+        ))}
+      </datalist>
       {error ? <Notice tone="bad">{error}</Notice> : null}
       <div className="flex gap-2">
         <Button type="submit" variant="primary" disabled={busy}>
