@@ -310,3 +310,68 @@ describe("files, inspections and quality check", () => {
     expect(f.rows.length + i.rows.length).toBe(0);
   });
 });
+
+describe("check-in", () => {
+  type Row = { id: string; number: number; customer_id: string; vehicle_id: string; concern: string; odometer_in: number | null };
+  const checkIn = (args: unknown[]) =>
+    as(OWNER, async () =>
+      (await db.query<Row>("select id, number, customer_id, vehicle_id, concern, odometer_in from check_in($1, $2, $3, $4, $5, $6, $7, $8)", args)).rows[0],
+    );
+  const count = async (table: string) => (await as(OWNER, () => db.query<{ n: number }>(`select count(*)::int n from ${table}`))).rows[0].n;
+  const nextNumber = async () => (await as(OWNER, () => db.query<{ n: number }>("select next_job_number n from shop_settings"))).rows[0].n;
+
+  it("creates a new customer, their vehicle and the job in one step", async () => {
+    const before = await nextNumber();
+    const j = await checkIn([
+      null,
+      JSON.stringify({ name: "Walk In", phone: "613-555-0111" }),
+      null,
+      JSON.stringify({ plate: "CNRT 482", vin: "2HGFC2F5XJH512847", year: "2018", make: "Honda", model: "Civic", engine: "2.0L 4-cyl" }),
+      96450,
+      "Grinding noise when braking",
+      null,
+      null,
+    ]);
+    expect(j.number).toBe(before);
+    expect(j.concern).toBe("Grinding noise when braking");
+    expect(j.odometer_in).toBe(96450);
+    const v = (await as(OWNER, () => db.query<{ customer_id: string; year: number; plate: string; odometer_km: number; engine: string }>("select customer_id, year, plate, odometer_km, engine from vehicles where id = $1", [j.vehicle_id]))).rows[0];
+    expect(v).toEqual({ customer_id: j.customer_id, year: 2018, plate: "CNRT 482", odometer_km: 96450, engine: "2.0L 4-cyl" });
+  });
+
+  it("adds a new vehicle to an existing customer", async () => {
+    const c = (await as(OWNER, () => db.query<{ id: string }>("select id from customers where name = 'Walk In'"))).rows[0].id;
+    const j = await checkIn([c, null, null, JSON.stringify({ plate: "BXRT 100", make: "Ford", model: "Escape" }), null, "", null, null]);
+    expect(j.customer_id).toBe(c);
+    expect(j.odometer_in).toBeNull();
+  });
+
+  it("uses an existing vehicle and records the new odometer reading on it", async () => {
+    const { customer_id, vehicle_id } = (await as(OWNER, () => db.query<{ customer_id: string; vehicle_id: string }>("select customer_id, vehicle_id from jobs where concern = 'Grinding noise when braking'"))).rows[0];
+    const again = await checkIn([customer_id, null, vehicle_id, null, 98000, "Oil change", null, null]);
+    expect(again.odometer_in).toBe(98000);
+    const km = (await as(OWNER, () => db.query<{ odometer_km: number }>("select odometer_km from vehicles where id = $1", [vehicle_id]))).rows[0].odometer_km;
+    expect(km).toBe(98000);
+    // No reading given: the job starts from the last one, as before
+    const third = await checkIn([customer_id, null, vehicle_id, null, null, "", null, null]);
+    expect(third.odometer_in).toBe(98000);
+  });
+
+  it("saves nothing, and uses no job number, when any part fails", async () => {
+    const [customers, vehicles, jobs, next] = [await count("customers"), await count("vehicles"), await count("jobs"), await nextNumber()];
+    // That VIN is already on file
+    await expect(checkIn([null, JSON.stringify({ name: "Dup", phone: "1" }), null, JSON.stringify({ vin: "2HGFC2F5XJH512847" }), null, "", null, null])).rejects.toThrow();
+    // A customer with no name
+    await expect(checkIn([null, JSON.stringify({ name: " " }), null, JSON.stringify({ plate: "X" }), null, "", null, null])).rejects.toThrow();
+    expect([await count("customers"), await count("vehicles"), await count("jobs"), await nextNumber()]).toEqual([customers, vehicles, jobs, next]);
+  });
+
+  it("refuses another customer's vehicle and is staff only", async () => {
+    const other = (await as(OWNER, () => db.query<{ id: string }>("insert into customers (name, phone) values ('Someone', '2') returning id"))).rows[0].id;
+    const vehicle = (await as(OWNER, () => db.query<{ vehicle_id: string }>("select vehicle_id from jobs where concern = 'Oil change'"))).rows[0].vehicle_id;
+    await expect(checkIn([other, null, vehicle, null, null, "", null, null])).rejects.toThrow(/doesn't belong/);
+    await expect(
+      as(STRANGER, () => db.query("select * from check_in(null, $1, null, $2, null, '', null, null)", [JSON.stringify({ name: "X", phone: "3" }), JSON.stringify({ plate: "Y" })])),
+    ).rejects.toThrow();
+  });
+});

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
 import { LinesEditor, type Rates } from "./LinesEditor";
 import { DocumentButtons } from "./DocumentButtons";
 import { FilesPanel } from "./FilesPanel";
@@ -45,6 +45,8 @@ function toLocalInput(iso: string | null): string {
 }
 
 const STEPS: Job["status"][] = ["estimate", "approved", "ready", "invoiced", "paid"];
+
+type SectionKey = "concern" | "lines" | "insurance" | "dropoff" | "photos" | "inspection" | "work" | "qc";
 
 export function JobView({ initial, rates, hstNumber }: { initial: JobFull; rates: Rates; hstNumber: string }) {
   const { customer, vehicle, job_lines: initialLines, payments: initialPayments, files, inspection, ...initialJob } = initial;
@@ -120,17 +122,168 @@ export function JobView({ initial, rates, hstNumber }: { initial: JobFull; rates
   const intake = job.intake ?? {};
   const stepIndex = STEPS.indexOf(job.status);
   const showQc = job.status !== "estimate" && job.status !== "declined";
+  // At the counter (estimate): concern, then the car's condition and photos, then pricing.
+  // From approval on: the order the bay and the invoice need.
+  const intakeStage = job.status === "estimate" || job.status === "declined";
+  const order: SectionKey[] = intakeStage
+    ? ["concern", "dropoff", "photos", "lines", "insurance", "inspection", "work"]
+    : ["concern", "lines", "insurance", "dropoff", "photos", "inspection", "work", "qc"];
+  const JUMP: Record<SectionKey, JumpItem> = {
+    concern: { id: "sec-concern", label: "Concern" },
+    lines: { id: "sec-lines", label: "Lines", note: String(lines.length) },
+    insurance: { id: "sec-insurance", label: "Insurance" },
+    dropoff: { id: "sec-dropoff", label: "Drop-off" },
+    photos: { id: "sec-photos", label: "Photos" },
+    inspection: { id: "sec-inspection", label: "Inspection" },
+    work: { id: "sec-work", label: "Work" },
+    qc: { id: "sec-qc", label: "Quality check", note: `${qcDone(job.qc)}/${QC_ITEMS.length}` },
+  };
   const jumps: JumpItem[] = [
-    { id: "sec-concern", label: "Concern" },
-    { id: "sec-lines", label: "Lines", note: String(lines.length) },
-    { id: "sec-insurance", label: "Insurance" },
-    { id: "sec-dropoff", label: "Drop-off" },
-    { id: "sec-photos", label: "Photos" },
-    { id: "sec-inspection", label: "Inspection" },
-    { id: "sec-work", label: "Work" },
-    ...(showQc ? [{ id: "sec-qc", label: "Quality check", note: `${qcDone(job.qc)}/${QC_ITEMS.length}` }] : []),
+    ...order.filter((k) => k !== "qc" || showQc).map((k) => JUMP[k]),
     { id: "totals", label: locked || payments.length ? "Totals & payments" : "Totals", phoneOnly: true },
   ];
+
+  // Each part of the job, rendered below in the order that suits the job's stage
+  const sections: Record<SectionKey, ReactNode> = {
+    concern: (
+      <Section id="sec-concern" title="Customer's concern">
+        <div className="space-y-4 p-4">
+          <Field label="What the customer wants done" hint="Printed on the estimate and work order.">
+            <Textarea rows={3} value={job.concern} onChange={(e) => set("concern", e.target.value)} disabled={locked} placeholder="Rear bumper scuffed in parking lot; replace textured trim and refinish." />
+          </Field>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            <Field label="Estimate date">
+              <Input type="date" value={job.estimate_date} onChange={(e) => set("estimate_date", e.target.value)} disabled={locked} />
+            </Field>
+            <Field label="Valid until">
+              <Input type="date" value={job.valid_until ?? ""} onChange={(e) => set("valid_until", e.target.value || null)} disabled={locked} />
+            </Field>
+            <Field label="Expected completion" className="col-span-2 md:col-span-1">
+              <Input type="date" value={job.expected_completion ?? ""} onChange={(e) => set("expected_completion", e.target.value || null)} />
+            </Field>
+          </div>
+        </div>
+      </Section>
+    ),
+    lines: (
+      <Section
+        id="sec-lines"
+        title="Line items"
+        aside={<span className="tabular text-sm text-muted">{lines.length} {lines.length === 1 ? "line" : "lines"}</span>}
+      >
+        <LinesEditor jobId={job.id} lines={lines} setLines={setLines} rates={rates} locked={locked} />
+      </Section>
+    ),
+    insurance: (
+      <Section id="sec-insurance" title="Insurance">
+        <div className="space-y-4 p-4">
+          <label className="flex cursor-pointer items-start gap-3">
+            <input type="checkbox" checked={job.is_insurance} onChange={(e) => set("is_insurance", e.target.checked)} disabled={locked} className="mt-0.5 h-5 w-5 accent-ink" />
+            <span>
+              <span className="block font-medium text-ink">Insurance claim</span>
+              <span className="block text-sm text-muted">The invoice shows the insurer&apos;s share and the customer&apos;s deductible separately.</span>
+            </span>
+          </label>
+          {job.is_insurance ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Insurer">
+                <Input value={job.insurer} onChange={(e) => set("insurer", e.target.value)} />
+              </Field>
+              <Field label="Claim number">
+                <Input value={job.claim_number} onChange={(e) => set("claim_number", e.target.value)} />
+              </Field>
+              <Field label="Deductible ($)">
+                <NumberInput value={Number(job.deductible) || null} onValue={(v) => set("deductible", v ?? 0)} min={0} step="0.01" disabled={locked} />
+              </Field>
+              <Field label="Insurer pays ($)" hint={job.insurer_pays === null ? `Leave blank: total minus deductible (${money(live.insurerPays)}).` : "Customer pays the rest."}>
+                <NumberInput value={job.insurer_pays === null ? null : Number(job.insurer_pays)} onValue={(v) => set("insurer_pays", v)} min={0} step="0.01" disabled={locked} />
+              </Field>
+            </div>
+          ) : null}
+        </div>
+      </Section>
+    ),
+    dropoff: (
+      <Section id="sec-dropoff" title="Vehicle at drop-off">
+        <div className="space-y-5 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Odometer in (km)">
+              <NumberInput value={job.odometer_in} onValue={(v) => set("odometer_in", v === null ? null : Math.round(v))} inputMode="numeric" min={0} step="1" disabled={locked} />
+            </Field>
+            <Field label="Odometer out (km)">
+              <NumberInput value={job.odometer_out} onValue={(v) => set("odometer_out", v === null ? null : Math.round(v))} inputMode="numeric" min={0} step="1" disabled={locked} />
+            </Field>
+          </div>
+          <div>
+            <p className="mb-2 text-[13px] font-medium text-muted">Exterior and body</p>
+            <ChipToggles options={INTAKE_BODY} value={intake.body ?? []} onChange={(v) => setIntake({ body: v })} />
+            <Input className="mt-2" value={intake.body_other ?? ""} onChange={(e) => setIntake({ body_other: e.target.value })} placeholder="Other, or where the damage is" aria-label="Other body condition" />
+          </div>
+          <div>
+            <p className="mb-2 text-[13px] font-medium text-muted">Mechanical concerns</p>
+            <ChipToggles options={INTAKE_MECHANICAL} value={intake.mechanical ?? []} onChange={(v) => setIntake({ mechanical: v })} />
+            <Input className="mt-2" value={intake.mechanical_other ?? ""} onChange={(e) => setIntake({ mechanical_other: e.target.value })} placeholder="Other" aria-label="Other mechanical concern" />
+          </div>
+          <div>
+            <p className="mb-2 text-[13px] font-medium text-muted">Warning lights on</p>
+            <ChipToggles
+              options={INTAKE_LIGHTS}
+              value={intake.lights ?? []}
+              onChange={(v) => {
+                // "None" and a light can't both be ticked
+                const added = v.find((x) => !(intake.lights ?? []).includes(x));
+                setIntake({ lights: added === "None" ? ["None"] : v.filter((x) => x !== "None") });
+              }}
+            />
+            <Input className="mt-2" value={intake.lights_other ?? ""} onChange={(e) => setIntake({ lights_other: e.target.value })} placeholder="Other light" aria-label="Other warning light" />
+          </div>
+          <Field label="Belongings and pre-existing damage notes">
+            <Textarea rows={2} value={job.belongings} onChange={(e) => set("belongings", e.target.value)} placeholder="Child seat in rear; crack in windshield, driver side" />
+          </Field>
+        </div>
+      </Section>
+    ),
+    photos: (
+      <Section id="sec-photos" title="Photos and files" aside={<span className="text-sm text-muted">{files.length ? `${files.length} saved` : ""}</span>}>
+        <FilesPanel jobId={job.id} initial={files} />
+      </Section>
+    ),
+    inspection: (
+      <Section id="sec-inspection" title="Mechanical inspection">
+        <InspectionCard jobId={job.id} inspection={inspection} />
+      </Section>
+    ),
+    work: (
+      <Section id="sec-work" title="Work">
+        <div className="grid grid-cols-2 gap-3 p-4">
+          <Field label="Technician">
+            <Input value={job.technician} onChange={(e) => set("technician", e.target.value)} />
+          </Field>
+          <Field label="Bay">
+            <Input value={job.bay} onChange={(e) => set("bay", e.target.value)} />
+          </Field>
+          <Field label="Started">
+            <Input type="datetime-local" value={toLocalInput(job.work_started_at)} onChange={(e) => set("work_started_at", e.target.value ? new Date(e.target.value).toISOString() : null)} />
+          </Field>
+          <Field label="Finished">
+            <Input type="datetime-local" value={toLocalInput(job.work_finished_at)} onChange={(e) => set("work_finished_at", e.target.value ? new Date(e.target.value).toISOString() : null)} />
+          </Field>
+          <Field label="Technician notes" hint="Printed on the work order." className="col-span-2">
+            <Textarea rows={3} value={job.tech_notes} onChange={(e) => set("tech_notes", e.target.value)} />
+          </Field>
+          <Field label="Internal notes" hint="Never printed." className="col-span-2">
+            <Textarea rows={2} value={job.notes} onChange={(e) => set("notes", e.target.value)} />
+          </Field>
+        </div>
+      </Section>
+    ),
+    qc: showQc ? (
+      <Section id="sec-qc" title="Final quality check" aside={<span className="text-sm text-muted">{qcSummary(job)}</span>}>
+                <QcPanel job={job} set={set} />
+              </Section>
+    ) : null,
+  };
+
 
   return (
     <div className="pb-20 lg:pb-6">
@@ -207,136 +360,9 @@ export function JobView({ initial, rates, hstNumber }: { initial: JobFull; rates
             </div>
           </Card>
 
-          <Section id="sec-concern" title="Customer's concern">
-            <div className="space-y-4 p-4">
-              <Field label="What the customer wants done" hint="Printed on the estimate and work order.">
-                <Textarea rows={3} value={job.concern} onChange={(e) => set("concern", e.target.value)} disabled={locked} placeholder="Rear bumper scuffed in parking lot; replace textured trim and refinish." />
-              </Field>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-                <Field label="Estimate date">
-                  <Input type="date" value={job.estimate_date} onChange={(e) => set("estimate_date", e.target.value)} disabled={locked} />
-                </Field>
-                <Field label="Valid until">
-                  <Input type="date" value={job.valid_until ?? ""} onChange={(e) => set("valid_until", e.target.value || null)} disabled={locked} />
-                </Field>
-                <Field label="Expected completion" className="col-span-2 md:col-span-1">
-                  <Input type="date" value={job.expected_completion ?? ""} onChange={(e) => set("expected_completion", e.target.value || null)} />
-                </Field>
-              </div>
-            </div>
-          </Section>
-
-          <Section
-            id="sec-lines"
-            title="Line items"
-            aside={<span className="tabular text-sm text-muted">{lines.length} {lines.length === 1 ? "line" : "lines"}</span>}
-          >
-            <LinesEditor jobId={job.id} lines={lines} setLines={setLines} rates={rates} locked={locked} />
-          </Section>
-
-          <Section id="sec-insurance" title="Insurance">
-            <div className="space-y-4 p-4">
-              <label className="flex cursor-pointer items-start gap-3">
-                <input type="checkbox" checked={job.is_insurance} onChange={(e) => set("is_insurance", e.target.checked)} disabled={locked} className="mt-0.5 h-5 w-5 accent-ink" />
-                <span>
-                  <span className="block font-medium text-ink">Insurance claim</span>
-                  <span className="block text-sm text-muted">The invoice shows the insurer&apos;s share and the customer&apos;s deductible separately.</span>
-                </span>
-              </label>
-              {job.is_insurance ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Insurer">
-                    <Input value={job.insurer} onChange={(e) => set("insurer", e.target.value)} />
-                  </Field>
-                  <Field label="Claim number">
-                    <Input value={job.claim_number} onChange={(e) => set("claim_number", e.target.value)} />
-                  </Field>
-                  <Field label="Deductible ($)">
-                    <NumberInput value={Number(job.deductible) || null} onValue={(v) => set("deductible", v ?? 0)} min={0} step="0.01" disabled={locked} />
-                  </Field>
-                  <Field label="Insurer pays ($)" hint={job.insurer_pays === null ? `Leave blank: total minus deductible (${money(live.insurerPays)}).` : "Customer pays the rest."}>
-                    <NumberInput value={job.insurer_pays === null ? null : Number(job.insurer_pays)} onValue={(v) => set("insurer_pays", v)} min={0} step="0.01" disabled={locked} />
-                  </Field>
-                </div>
-              ) : null}
-            </div>
-          </Section>
-
-          <Section id="sec-dropoff" title="Vehicle at drop-off">
-            <div className="space-y-5 p-4">
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Odometer in (km)">
-                  <NumberInput value={job.odometer_in} onValue={(v) => set("odometer_in", v === null ? null : Math.round(v))} inputMode="numeric" min={0} step="1" disabled={locked} />
-                </Field>
-                <Field label="Odometer out (km)">
-                  <NumberInput value={job.odometer_out} onValue={(v) => set("odometer_out", v === null ? null : Math.round(v))} inputMode="numeric" min={0} step="1" disabled={locked} />
-                </Field>
-              </div>
-              <div>
-                <p className="mb-2 text-[13px] font-medium text-muted">Exterior and body</p>
-                <ChipToggles options={INTAKE_BODY} value={intake.body ?? []} onChange={(v) => setIntake({ body: v })} />
-                <Input className="mt-2" value={intake.body_other ?? ""} onChange={(e) => setIntake({ body_other: e.target.value })} placeholder="Other, or where the damage is" aria-label="Other body condition" />
-              </div>
-              <div>
-                <p className="mb-2 text-[13px] font-medium text-muted">Mechanical concerns</p>
-                <ChipToggles options={INTAKE_MECHANICAL} value={intake.mechanical ?? []} onChange={(v) => setIntake({ mechanical: v })} />
-                <Input className="mt-2" value={intake.mechanical_other ?? ""} onChange={(e) => setIntake({ mechanical_other: e.target.value })} placeholder="Other" aria-label="Other mechanical concern" />
-              </div>
-              <div>
-                <p className="mb-2 text-[13px] font-medium text-muted">Warning lights on</p>
-                <ChipToggles
-                  options={INTAKE_LIGHTS}
-                  value={intake.lights ?? []}
-                  onChange={(v) => {
-                    // "None" and a light can't both be ticked
-                    const added = v.find((x) => !(intake.lights ?? []).includes(x));
-                    setIntake({ lights: added === "None" ? ["None"] : v.filter((x) => x !== "None") });
-                  }}
-                />
-                <Input className="mt-2" value={intake.lights_other ?? ""} onChange={(e) => setIntake({ lights_other: e.target.value })} placeholder="Other light" aria-label="Other warning light" />
-              </div>
-              <Field label="Belongings and pre-existing damage notes">
-                <Textarea rows={2} value={job.belongings} onChange={(e) => set("belongings", e.target.value)} placeholder="Child seat in rear; crack in windshield, driver side" />
-              </Field>
-            </div>
-          </Section>
-
-          <Section id="sec-photos" title="Photos and files" aside={<span className="text-sm text-muted">{files.length ? `${files.length} saved` : ""}</span>}>
-            <FilesPanel jobId={job.id} initial={files} />
-          </Section>
-
-          <Section id="sec-inspection" title="Mechanical inspection">
-            <InspectionCard jobId={job.id} inspection={inspection} />
-          </Section>
-
-          <Section id="sec-work" title="Work">
-            <div className="grid grid-cols-2 gap-3 p-4">
-              <Field label="Technician">
-                <Input value={job.technician} onChange={(e) => set("technician", e.target.value)} />
-              </Field>
-              <Field label="Bay">
-                <Input value={job.bay} onChange={(e) => set("bay", e.target.value)} />
-              </Field>
-              <Field label="Started">
-                <Input type="datetime-local" value={toLocalInput(job.work_started_at)} onChange={(e) => set("work_started_at", e.target.value ? new Date(e.target.value).toISOString() : null)} />
-              </Field>
-              <Field label="Finished">
-                <Input type="datetime-local" value={toLocalInput(job.work_finished_at)} onChange={(e) => set("work_finished_at", e.target.value ? new Date(e.target.value).toISOString() : null)} />
-              </Field>
-              <Field label="Technician notes" hint="Printed on the work order." className="col-span-2">
-                <Textarea rows={3} value={job.tech_notes} onChange={(e) => set("tech_notes", e.target.value)} />
-              </Field>
-              <Field label="Internal notes" hint="Never printed." className="col-span-2">
-                <Textarea rows={2} value={job.notes} onChange={(e) => set("notes", e.target.value)} />
-              </Field>
-            </div>
-          </Section>
-
-          {showQc ? (
-            <Section id="sec-qc" title="Final quality check" aside={<span className="text-sm text-muted">{qcSummary(job)}</span>}>
-              <QcPanel job={job} set={set} />
-            </Section>
-          ) : null}
+          {order.map((k) => (
+            <Fragment key={k}>{sections[k]}</Fragment>
+          ))}
 
           {job.status === "estimate" || job.status === "declined" ? (
             <div className="border-t border-line pt-5">

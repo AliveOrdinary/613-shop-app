@@ -21,9 +21,15 @@ export function CustomersView({ customers }: { customers: CustomerWithVehicles[]
       <PageTitle
         sub={`${customers.length} ${customers.length === 1 ? "customer" : "customers"}`}
         action={
-          <Link href="/customers/new" className="inline-flex h-11 items-center rounded-lg bg-brand px-4 text-[15px] font-medium text-ink hover:bg-brand-hover">
-            Add customer
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/customers/new" className="inline-flex h-11 items-center rounded-lg border border-line bg-surface px-4 text-[15px] font-medium text-ink hover:bg-canvas">
+              Add customer
+            </Link>
+            {/* Most visits start a job; check-in adds the customer and car on the way */}
+            <Link href="/jobs/new" className="inline-flex h-11 items-center rounded-lg bg-brand px-4 text-[15px] font-medium text-ink hover:bg-brand-hover">
+              New job
+            </Link>
+          </div>
         }
       >
         Customers
