@@ -8,7 +8,7 @@ import { FilesPanel } from "./FilesPanel";
 import { InspectionCard } from "./InspectionCard";
 import { JumpBar, type JumpItem } from "./JumpBar";
 import { QcPanel, qcSummary } from "./QcPanel";
-import { PaymentsPanel } from "./PaymentsPanel";
+import { PaymentsPanel, owing } from "./PaymentsPanel";
 import { StatusActions } from "./StatusActions";
 import { TotalsPanel } from "./TotalsPanel";
 import { Badge, Button, Card, ChipToggles, Modal, Field, Input, Notice, NumberInput, Textarea, cx } from "./ui";
@@ -18,7 +18,8 @@ import { deleteAllJobFiles } from "@/lib/files";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { jobTotals } from "@/lib/totals";
 import { useAutosave } from "@/lib/useAutosave";
-import type { Intake, Job, JobFull, JobLine, Payment } from "@/lib/types";
+import type { PreviousJob, SavedItem } from "@/lib/reuse";
+import type { Intake, Job, JobFull, JobLine, Payment, PaymentMethod } from "@/lib/types";
 import { useRouter } from "next/navigation";
 
 function Section({ id, title, aside, children, className }: { id: string; title: string; aside?: ReactNode; children: ReactNode; className?: string }) {
@@ -48,7 +49,19 @@ const STEPS: Job["status"][] = ["estimate", "approved", "ready", "invoiced", "pa
 
 type SectionKey = "concern" | "lines" | "insurance" | "dropoff" | "photos" | "inspection" | "work" | "qc";
 
-export function JobView({ initial, rates, hstNumber }: { initial: JobFull; rates: Rates; hstNumber: string }) {
+export function JobView({
+  initial,
+  rates,
+  hstNumber,
+  savedItems,
+  previous,
+}: {
+  initial: JobFull;
+  rates: Rates;
+  hstNumber: string;
+  savedItems: SavedItem[];
+  previous: PreviousJob | null;
+}) {
   const { customer, vehicle, job_lines: initialLines, payments: initialPayments, files, inspection, ...initialJob } = initial;
   const router = useRouter();
   const [payments, setPayments] = useState<Payment[]>(initialPayments ?? []);
@@ -119,6 +132,16 @@ export function JobView({ initial, rates, hstNumber }: { initial: JobFull; rates
     return null;
   }
 
+  /** "Paid now" when invoicing: records the payment once the invoice exists */
+  async function payNow(p: { amount: number; method: PaymentMethod; reference: string; paid_on: string }): Promise<string | null> {
+    const { error } = await sb.from("payments").insert({ job_id: job.id, payer: "customer", ...p });
+    if (error) return error.message;
+    await reloadPayments();
+    return null;
+  }
+  // What the customer still owes on the invoice about to be created (their share on insurance jobs)
+  const customerOwes = owing(live, payments, job.is_insurance).customer;
+
   const intake = job.intake ?? {};
   const stepIndex = STEPS.indexOf(job.status);
   const showQc = job.status !== "estimate" && job.status !== "declined";
@@ -171,7 +194,7 @@ export function JobView({ initial, rates, hstNumber }: { initial: JobFull; rates
         title="Line items"
         aside={<span className="tabular text-sm text-muted">{lines.length} {lines.length === 1 ? "line" : "lines"}</span>}
       >
-        <LinesEditor jobId={job.id} lines={lines} setLines={setLines} rates={rates} locked={locked} />
+        <LinesEditor jobId={job.id} lines={lines} setLines={setLines} rates={rates} locked={locked} savedItems={savedItems} previous={previous} />
       </Section>
     ),
     insurance: (
@@ -331,7 +354,7 @@ export function JobView({ initial, rates, hstNumber }: { initial: JobFull; rates
       </div>
 
       <div className="mb-6">
-        <StatusActions job={job} totals={live} apply={apply} onPay={() => setPayOpen(true)} hstNumber={hstNumber} />
+        <StatusActions job={job} totals={live} apply={apply} onPay={() => setPayOpen(true)} hstNumber={hstNumber} customerOwes={customerOwes} payNow={payNow} />
       </div>
 
       {locked ? (
@@ -406,19 +429,28 @@ export function JobView({ initial, rates, hstNumber }: { initial: JobFull; rates
         </Modal>
       ) : null}
 
-      {/* Phones: the total stays in view while editing lines */}
-      <a
-        href="#totals"
-        className="fixed inset-x-0 bottom-[calc(57px+env(safe-area-inset-bottom))] z-10 flex items-center justify-between gap-3 bg-ink px-4 py-3 lg:hidden"
-      >
-        <span className="text-sm text-[#b4b2a9]">
-          {job.is_insurance ? `Customer pays ${money(totals.customerPays)}` : `${lines.length} ${lines.length === 1 ? "line" : "lines"} · incl. HST`}
-        </span>
-        <span className="flex items-baseline gap-2">
-          <span className="display text-white">Total</span>
-          <span className="display tabular text-xl text-brand">{money(totals.total)}</span>
-        </span>
-      </a>
+      {/* Phones: the total and the next step stay in view while scrolling */}
+      <div className="fixed inset-x-0 bottom-[calc(57px+env(safe-area-inset-bottom))] z-10 flex items-center justify-between gap-3 bg-ink px-4 py-2 lg:hidden">
+        <a href="#totals" className="min-w-0 py-1">
+          <span className="block truncate text-xs text-[#b4b2a9]">
+            {job.is_insurance ? `Customer pays ${money(totals.customerPays)}` : locked && totals.balance > 0 && Number(job.amount_paid) > 0 ? `Balance ${money(totals.balance)}` : `${lines.length} ${lines.length === 1 ? "line" : "lines"} · incl. HST`}
+          </span>
+          <span className="flex items-baseline gap-2">
+            <span className="display text-white">Total</span>
+            <span className="display tabular text-xl text-brand">{money(totals.total)}</span>
+          </span>
+        </a>
+        <StatusActions
+          primaryOnly
+          job={job}
+          totals={live}
+          apply={apply}
+          onPay={() => setPayOpen(true)}
+          hstNumber={hstNumber}
+          customerOwes={customerOwes}
+          payNow={payNow}
+        />
+      </div>
     </div>
   );
 }

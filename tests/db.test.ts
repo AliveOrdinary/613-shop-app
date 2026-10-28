@@ -375,3 +375,35 @@ describe("check-in", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("saved items", () => {
+  const lines = JSON.stringify([
+    { kind: "labour_mechanical", description: "Replace front pads and rotors", quantity: 1.5, unit_price: 120, markup_pct: 0, part_condition: null, oem: null, part_number: "" },
+    { kind: "part", description: "Front pads", quantity: 1, unit_price: 89.99, markup_pct: 0, part_condition: "new", oem: false, part_number: "D1234" },
+  ]);
+
+  it("staff save an item and see it", async () => {
+    await as(OWNER, () => db.query("insert into saved_items (name, lines) values ('Front brakes', $1)", [lines]));
+    const { rows } = await as(OWNER, () => db.query<{ name: string; n: number }>("select name, jsonb_array_length(lines) n from saved_items"));
+    expect(rows).toEqual([{ name: "Front brakes", n: 2 }]);
+  });
+
+  it("refuses a second item with the same name, any case or spacing", async () => {
+    await expect(as(OWNER, () => db.query("insert into saved_items (name, lines) values ('  front BRAKES ', $1)", [lines]))).rejects.toThrow(/saved_items_name_key/);
+  });
+
+  it("needs a name and at least one line", async () => {
+    await expect(as(OWNER, () => db.query("insert into saved_items (name, lines) values ('  ', $1)", [lines]))).rejects.toThrow();
+    await expect(as(OWNER, () => db.query("insert into saved_items (name, lines) values ('Empty', '[]')"))).rejects.toThrow();
+    await expect(as(OWNER, () => db.query(`insert into saved_items (name, lines) values ('Not a list', '{"kind":"fee"}')`))).rejects.toThrow();
+  });
+
+  it("is hidden from, and closed to, anyone who isn't staff", async () => {
+    const { rows } = await as(STRANGER, () => db.query("select * from saved_items"));
+    expect(rows).toEqual([]);
+    await expect(as(STRANGER, () => db.query("insert into saved_items (name, lines) values ('Sneaky', $1)", [lines]))).rejects.toThrow();
+    await as(STRANGER, () => db.query("delete from saved_items"));
+    const left = await as(OWNER, () => db.query("select * from saved_items"));
+    expect(left.rows).toHaveLength(1);
+  });
+});

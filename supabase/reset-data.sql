@@ -1,5 +1,6 @@
 -- Clears all customers, vehicles and jobs (with their lines, payments, photos' records and
--- inspections) and sets job numbers back to 200. Keeps the staff list, shop settings and logins.
+-- inspections) and sets job numbers back to 200. Keeps the staff list, shop settings, saved
+-- items and logins.
 --
 -- PERMANENT. Run only to clear test data before the shop starts using the app, in the
 -- Supabase SQL editor. It is not a migration and never runs by itself.
