@@ -8,7 +8,7 @@ export default async function JobsPage() {
   const { data, error } = await sb
     .from("jobs")
     .select(
-      "id, number, status, estimate_date, invoice_date, is_insurance, discount, hst_rate, shop_supplies_pct, shop_supplies_cap, deductible, insurer_pays, amount_paid, approved_total, invoice_totals, concern, " +
+      "id, number, status, quick, estimate_date, invoice_date, is_insurance, discount, hst_rate, shop_supplies_pct, shop_supplies_cap, deductible, insurer_pays, amount_paid, approved_total, invoice_totals, concern, " +
         "customer:customers(name, phone, company, kind), vehicle:vehicles(year, make, model, trim, plate, vin), " +
         "job_lines(kind, quantity, unit_price, markup_pct)",
     )

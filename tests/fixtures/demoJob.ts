@@ -28,7 +28,7 @@ const base = {
 
 export const demo: PdfData = {
   job: {
-    ...base, id: "j1", number: 214, status: "invoiced", customer_id: "c1", vehicle_id: "v1",
+    ...base, id: "j1", number: 214, status: "invoiced", quick: false, customer_id: "c1", vehicle_id: "v1",
     concern: "Low-speed collision in a parking lot. Front bumper cover cracked on the left side, left fender dented. Adaptive cruise warning on since the impact.",
     estimate_date: "2026-10-14", valid_until: "2026-11-13", expected_completion: "2026-10-20",
     odometer_in: 48210, odometer_out: 48236,

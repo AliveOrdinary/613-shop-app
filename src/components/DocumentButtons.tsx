@@ -45,8 +45,23 @@ function canShareFiles(): boolean {
  * spelled out. The PDF is fetched as soon as the sheet opens, because a phone only allows the
  * share sheet straight after a tap, not after a slow download.
  */
-export function DocumentButtons({ jobId, number, status, hasInspection }: { jobId: string; number: number; status: JobStatus; hasInspection: boolean }) {
-  const docs = DOCS.filter((d) => d.when.includes(status) && (d.kind !== "inspection" || hasInspection));
+export function DocumentButtons({
+  jobId,
+  number,
+  status,
+  hasInspection,
+  quick = false,
+}: {
+  jobId: string;
+  number: number;
+  status: JobStatus;
+  hasInspection: boolean;
+  /** A quick sale never had an estimate or work order to print, only its invoice */
+  quick?: boolean;
+}) {
+  const docs = DOCS.filter(
+    (d) => d.when.includes(status) && (d.kind !== "inspection" || hasInspection) && !(quick && (d.kind === "estimate" || d.kind === "work-order")),
+  );
   const [open, setOpen] = useState<(typeof DOCS)[number] | null>(null);
   const [ready, setReady] = useState<Ready>(null);
   const [shareable, setShareable] = useState(false);

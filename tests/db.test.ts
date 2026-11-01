@@ -407,3 +407,56 @@ describe("saved items", () => {
     expect(left.rows).toHaveLength(1);
   });
 });
+
+describe("quick sale", () => {
+  type Row = { id: string; number: number; status: string; quick: boolean; amount_paid: string; approval_method: string; customer_id: string; vehicle_id: string };
+  const lines = JSON.stringify([
+    { kind: "labour_mechanical", description: "Oil and filter change", quantity: 0.5, unit_price: 130, markup_pct: 0, part_condition: null, oem: null, part_number: "" },
+    { kind: "part", description: "5W-30 synthetic, 5 L", quantity: 1, unit_price: 42, markup_pct: 0, part_condition: "new", oem: false, part_number: "" },
+  ]);
+  const totals = (total: number) => JSON.stringify({ subtotal: 107, hst: Math.round((total - 107) * 100) / 100, total });
+  const rates = async () => {
+    const s = (await as(OWNER, () => db.query<{ hst_rate: string; enabled: boolean; pct: string; cap: string | null }>("select hst_rate, shop_supplies_enabled enabled, shop_supplies_pct pct, shop_supplies_cap cap from shop_settings"))).rows[0];
+    return JSON.stringify({ hst_rate: Number(s.hst_rate), shop_supplies_pct: s.enabled ? Number(s.pct) : null, shop_supplies_cap: s.enabled && s.cap !== null ? Number(s.cap) : null });
+  };
+  const sale = async (args: unknown[], user = OWNER) =>
+    as(user, async () => (await db.query<Row>("select id, number, status, quick, amount_paid, approval_method, customer_id, vehicle_id from quick_sale($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", args)).rows[0]);
+  const nextNumber = async () => (await as(OWNER, () => db.query<{ n: number }>("select next_job_number n from shop_settings"))).rows[0].n;
+
+  it("saves the customer, car, lines, invoice and payment in one step, and the job is paid", async () => {
+    const before = await nextNumber();
+    const j = await sale([null, JSON.stringify({ name: "Walk-in Oil", phone: "" }), null, JSON.stringify({ plate: "QUIK 101", make: "Toyota", model: "Corolla" }), null, lines, totals(120.91), await rates(), "cash", ""]);
+    expect(j).toMatchObject({ number: before, status: "paid", quick: true, approval_method: "in_person" });
+    expect(Number(j.amount_paid)).toBe(120.91);
+    const n = (await as(OWNER, () => db.query<{ lines: number; pays: number; inv: string }>(
+      "select (select count(*)::int from job_lines where job_id = $1) lines, (select count(*)::int from payments where job_id = $1 and method = 'cash') pays, (select invoice_totals->>'total' from jobs where id = $1) inv",
+      [j.id],
+    ))).rows[0];
+    expect(n).toEqual({ lines: 2, pays: 1, inv: "120.91" });
+  });
+
+  it("works for a returning customer's car", async () => {
+    const prev = (await as(OWNER, () => db.query<{ customer_id: string; vehicle_id: string }>("select customer_id, vehicle_id from jobs where quick order by number desc limit 1"))).rows[0];
+    const j = await sale([prev.customer_id, null, prev.vehicle_id, null, 152000, lines, totals(120.91), await rates(), "debit", "1234"]);
+    expect(j).toMatchObject({ status: "paid", customer_id: prev.customer_id, vehicle_id: prev.vehicle_id });
+  });
+
+  it("saves nothing, and uses no number, when something is wrong", async () => {
+    const before = await nextNumber();
+    const customers = async () => (await as(OWNER, () => db.query<{ n: number }>("select count(*)::int n from customers"))).rows[0].n;
+    const had = await customers();
+    const newCar = JSON.stringify({ plate: "NOPE 1" });
+    const who = JSON.stringify({ name: "Nobody" });
+    await expect(sale([null, who, null, newCar, null, "[]", totals(10), await rates(), "cash", ""])).rejects.toThrow(/at least one item/);
+    await expect(sale([null, who, null, newCar, null, lines, totals(0), await rates(), "cash", ""])).rejects.toThrow(/more than \$0/);
+    await expect(sale([null, who, null, newCar, null, lines, totals(120.91), await rates(), "bitcoin", ""])).rejects.toThrow();
+    await expect(sale([null, who, null, newCar, null, lines, totals(120.91), JSON.stringify({ hst_rate: 5, shop_supplies_pct: null, shop_supplies_cap: null }), "cash", ""])).rejects.toThrow(/rates changed/);
+    await expect(sale([null, JSON.stringify({ name: "" }), null, newCar, null, lines, totals(120.91), await rates(), "cash", ""])).rejects.toThrow();
+    expect(await nextNumber()).toBe(before);
+    expect(await customers()).toBe(had);
+  });
+
+  it("is refused for anyone who isn't staff", async () => {
+    await expect(sale([null, JSON.stringify({ name: "X" }), null, JSON.stringify({ plate: "Y" }), null, lines, totals(120.91), await rates(), "cash", ""], STRANGER)).rejects.toThrow();
+  });
+});

@@ -321,6 +321,7 @@ export function JobView({
             <h1 className="display tabular text-[30px] leading-none text-ink">{jobNumber(job)}</h1>
             <Badge tone={STATUS_TONE[job.status]}>{job.status === "invoiced" && Number(job.amount_paid) > 0 ? "Part paid" : STATUS_LABEL[job.status]}</Badge>
             {job.is_insurance ? <Badge>Insurance</Badge> : null}
+            {job.quick ? <Badge>Quick sale</Badge> : null}
           </div>
           <p className="mt-1.5 text-sm text-muted">
             {job.status === "declined"
@@ -350,7 +351,7 @@ export function JobView({
       ) : null}
 
       <div className="mb-3">
-        <DocumentButtons jobId={job.id} number={job.number} status={job.status} hasInspection={inspection !== null} />
+        <DocumentButtons jobId={job.id} number={job.number} status={job.status} hasInspection={inspection !== null} quick={job.quick} />
       </div>
 
       <div className="mb-6">
