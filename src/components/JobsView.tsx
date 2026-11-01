@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Badge, Card, EmptyState, Input, PageTitle, cx } from "./ui";
 import { money, vehicleLabel } from "@/lib/format";
-import { STATUS_LABEL, STATUS_TONE, formatDate, jobNumber, todayLocal } from "@/lib/jobs";
+import { formatDate, isOwed, jobNumber, statusBadge, todayLocal } from "@/lib/jobs";
 import { jobTotals, type Totals, type TotalsJob, type TotalsLine } from "@/lib/totals";
 import type { Customer, JobStatus, Vehicle } from "@/lib/types";
 
@@ -22,12 +22,14 @@ export type JobRow = TotalsJob & {
   job_lines: TotalsLine[];
 };
 
-const FILTERS: { key: string; label: string; statuses: JobStatus[] }[] = [
-  { key: "open", label: "In the shop", statuses: ["estimate", "approved", "ready"] },
-  { key: "unpaid", label: "Unpaid", statuses: ["invoiced"] }, // includes part paid
-  { key: "paid", label: "Paid", statuses: ["paid"] },
-  { key: "declined", label: "Declined", statuses: ["declined"] },
-  { key: "all", label: "All", statuses: ["estimate", "approved", "ready", "invoiced", "paid", "declined"] },
+type Row = Pick<JobRow, "status" | "quick">;
+const FILTERS: { key: string; label: string; shows: (j: Row) => boolean }[] = [
+  { key: "open", label: "In the shop", shows: (j) => ["estimate", "approved", "ready"].includes(j.status) && !isOwed(j) },
+  { key: "owed", label: "Owed", shows: isOwed }, // quick sales to pay later, not invoiced yet
+  { key: "unpaid", label: "Unpaid", shows: (j) => j.status === "invoiced" }, // includes part paid
+  { key: "paid", label: "Paid", shows: (j) => j.status === "paid" },
+  { key: "declined", label: "Declined", shows: (j) => j.status === "declined" },
+  { key: "all", label: "All", shows: () => true },
 ];
 
 /** The day a job belongs to in the list: its invoice date once invoiced, else its estimate date */
@@ -76,13 +78,14 @@ export function JobsView({ jobs }: { jobs: JobRow[] }) {
     [jobs],
   );
 
-  const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.key, jobs.filter((j) => f.statuses.includes(j.status)).length])), [jobs]);
+  const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.key, jobs.filter(f.shows).length])), [jobs]);
+  const owedTotal = useMemo(() => rows.reduce((sum, r) => (isOwed(r.j) ? sum + r.total : sum), 0), [rows]);
 
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   // A search looks across every status
-  const statuses = words.length ? FILTERS[4].statuses : FILTERS.find((f) => f.key === filter)!.statuses;
+  const shows = words.length ? () => true : FILTERS.find((f) => f.key === filter)!.shows;
   const shown = rows
-    .filter(({ j, text }) => statuses.includes(j.status) && words.every((w) => text.includes(w)))
+    .filter(({ j, text }) => shows(j) && words.every((w) => text.includes(w)))
     .sort((a, b) => jobDay(b.j).localeCompare(jobDay(a.j)) || b.j.number - a.j.number);
   // Grouped by day, newest first
   const today = todayLocal();
@@ -128,10 +131,19 @@ export function JobsView({ jobs }: { jobs: JobRow[] }) {
               )}
             >
               {f.label}
-              <span className={cx("tabular text-xs", filter === f.key ? "text-brand" : "text-faint")}>{counts[f.key]}</span>
+              <span className={cx("tabular text-xs", filter === f.key ? "text-brand" : "text-faint")}>
+                {counts[f.key]}
+                {f.key === "owed" && owedTotal > 0 ? ` · ${money(owedTotal)}` : ""}
+              </span>
             </button>
           ))}
         </div>
+      ) : null}
+
+      {words.length === 0 && filter === "owed" && counts.owed > 0 ? (
+        <p className="mb-4 text-sm text-muted">
+          {money(owedTotal)} owed on {counts.owed} quick {counts.owed === 1 ? "sale" : "sales"}. When they pay, open the sale and tap Paid · create invoice.
+        </p>
       ) : null}
 
       {jobs.length === 0 ? (
@@ -157,7 +169,7 @@ export function JobsView({ jobs }: { jobs: JobRow[] }) {
                 <p className="truncate font-medium text-ink">{j.customer.name}</p>
                 <p className="truncate text-sm text-muted">{[vehicleLabel(j.vehicle), j.vehicle.plate].filter(Boolean).join(" · ")}</p>
                 <span className="mt-1 flex flex-wrap gap-1 sm:hidden">
-                  <Badge tone={STATUS_TONE[j.status]}>{j.status === "invoiced" && Number(j.amount_paid) > 0 ? "Part paid" : STATUS_LABEL[j.status]}</Badge>
+                  <Badge tone={statusBadge(j).tone}>{statusBadge(j).label}</Badge>
                   {j.is_insurance ? <Badge>Insurance</Badge> : null}
                   {j.quick ? <Badge>Quick</Badge> : null}
                 </span>
@@ -167,7 +179,7 @@ export function JobsView({ jobs }: { jobs: JobRow[] }) {
                 <span className="hidden gap-1 sm:flex">
                   {j.is_insurance ? <Badge>Insurance</Badge> : null}
                 {j.quick ? <Badge>Quick</Badge> : null}
-                  <Badge tone={STATUS_TONE[j.status]}>{j.status === "invoiced" && Number(j.amount_paid) > 0 ? "Part paid" : STATUS_LABEL[j.status]}</Badge>
+                  <Badge tone={statusBadge(j).tone}>{statusBadge(j).label}</Badge>
                 </span>
               </div>
             </Link>

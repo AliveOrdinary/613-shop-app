@@ -13,7 +13,7 @@ import { StatusActions } from "./StatusActions";
 import { TotalsPanel } from "./TotalsPanel";
 import { Badge, Button, Card, ChipToggles, Modal, Field, Input, Notice, NumberInput, Textarea, cx } from "./ui";
 import { money, vehicleLabel } from "@/lib/format";
-import { APPROVAL_LABEL, INTAKE_BODY, INTAKE_LIGHTS, INTAKE_MECHANICAL, QC_ITEMS, STATUS_LABEL, STATUS_TONE, formatDate, isLocked, jobNumber, qcDone } from "@/lib/jobs";
+import { APPROVAL_LABEL, INTAKE_BODY, INTAKE_LIGHTS, INTAKE_MECHANICAL, QC_ITEMS, STATUS_LABEL, formatDate, isLocked, isOwed, jobNumber, qcDone, statusBadge } from "@/lib/jobs";
 import { deleteAllJobFiles } from "@/lib/files";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { jobTotals } from "@/lib/totals";
@@ -319,7 +319,7 @@ export function JobView({
         <div>
           <div className="flex items-center gap-3">
             <h1 className="display tabular text-[30px] leading-none text-ink">{jobNumber(job)}</h1>
-            <Badge tone={STATUS_TONE[job.status]}>{job.status === "invoiced" && Number(job.amount_paid) > 0 ? "Part paid" : STATUS_LABEL[job.status]}</Badge>
+            <Badge tone={statusBadge(job).tone}>{statusBadge(job).label}</Badge>
             {job.is_insurance ? <Badge>Insurance</Badge> : null}
             {job.quick ? <Badge>Quick sale</Badge> : null}
           </div>
@@ -328,7 +328,9 @@ export function JobView({
               ? `Declined ${formatDate(job.declined_at)}`
               : locked && job.invoice_date
                 ? `Invoiced ${formatDate(job.invoice_date)}`
-                : `Estimate ${formatDate(job.estimate_date)}`}
+                : isOwed(job)
+                  ? `Done ${formatDate(job.estimate_date)} · to pay later, invoiced when paid`
+                  : `Estimate ${formatDate(job.estimate_date)}`}
             {job.approved_at && job.approval_method ? ` · Approved ${formatDate(job.approved_at)} (${APPROVAL_LABEL[job.approval_method].toLowerCase()})` : ""}
             {job.status === "paid" && job.paid_at ? ` · Paid in full ${formatDate(job.paid_at)}` : ""}
           </p>

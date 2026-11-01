@@ -28,6 +28,8 @@ type OnFile = { customer: CustomerWithVehicles; vehicle: Vehicle | null };
 
 const KINDS: LineKind[] = ["labour_mechanical", "part", "sublet", "fee"];
 const METHODS: PaymentMethod[] = ["cash", "debit", "credit", "etransfer"];
+/** Friends and family often pay later: the sale is recorded and invoiced when they pay */
+type Paid = PaymentMethod | "later";
 const compact = (s: string) => s.replace(/[\s-]/g, "").toUpperCase();
 const digits = (s: string) => s.replace(/\D/g, "");
 let keys = 0;
@@ -62,11 +64,11 @@ export function QuickSaleView({
   const [odometer, setOdometer] = useState<number | null>(null);
   const [picked, setPicked] = useState<OnFile | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
-  const [method, setMethod] = useState<PaymentMethod | null>(null);
+  const [method, setMethod] = useState<Paid | null>(null);
   const [reference, setReference] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ id: string; number: number; total: number; method: PaymentMethod } | null>(null);
+  const [done, setDone] = useState<{ id: string; number: number; total: number; method: Paid } | null>(null);
   const [number, setNumber] = useState(nextNumber);
 
   // Cars and customers already on file that match the plate or phone typed so far
@@ -151,7 +153,7 @@ export function QuickSaleView({
     if (!lines.length) return "Add the work done.";
     if (lines.some((l) => !l.description.trim())) return "Every item needs a description; it's printed on the invoice.";
     if (totals.total <= 0) return "The total must be more than $0.";
-    if (!method) return "Pick how the customer paid.";
+    if (!method) return "Pick how the customer paid, or Pay later.";
     return null;
   }
 
@@ -173,8 +175,8 @@ export function QuickSaleView({
         p_lines: lines.map(toReusable),
         p_totals: { ...totals, overEstimate: false },
         p_rates: { hst_rate: job.hst_rate, shop_supplies_pct: job.shop_supplies_pct, shop_supplies_cap: job.shop_supplies_cap },
-        p_method: method,
-        p_reference: reference.trim(),
+        p_method: method === "later" ? null : method,
+        p_reference: method === "later" ? "" : reference.trim(),
       })
       .single<{ id: string; number: number }>();
     setBusy(false);
@@ -205,7 +207,32 @@ export function QuickSaleView({
     setDone(null);
   }
 
+  if (done?.method === "later") {
+    return (
+      <div className="mx-auto max-w-xl space-y-4">
+        <Card className="space-y-4 p-5 text-center">
+          <div>
+            <h1 className="display text-2xl text-ink">RO-{done.number} saved</h1>
+            <p className="mt-1 text-muted">{money(done.total)} owed, to pay later</p>
+          </div>
+          <p className="text-sm text-muted">
+            No invoice yet. It&apos;s under Jobs → Owed; when they pay, open it and tap Paid · create invoice.
+          </p>
+        </Card>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" size="lg" onClick={startOver} className="flex-1">
+            New quick sale
+          </Button>
+          <Link href={`/jobs/${done.id}`} className="inline-flex h-12 flex-1 items-center justify-center rounded-lg border border-line bg-surface px-5 font-medium text-ink hover:bg-canvas">
+            Open RO-{done.number}
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (done) {
+    const paidBy = done.method as PaymentMethod;
     return (
       <div className="mx-auto max-w-xl space-y-4">
         <Card className="space-y-4 p-5 text-center">
@@ -217,11 +244,11 @@ export function QuickSaleView({
           <div>
             <h1 className="display text-2xl text-ink">INV-{done.number} paid</h1>
             <p className="mt-1 text-muted">
-              {money(done.total)} by {PAYMENT_LABEL[done.method].toLowerCase()}
+              {money(done.total)} by {PAYMENT_LABEL[paidBy].toLowerCase()}
             </p>
           </div>
           <p className="text-sm text-muted">
-            {done.method === "cash" ? "Saved with its invoice. Print or share a copy if the customer wants one." : "Print or share the invoice for the customer."}
+            {paidBy === "cash" ? "Saved with its invoice. Print or share a copy if the customer wants one." : "Print or share the invoice for the customer."}
           </p>
           <div className="flex justify-center">
             <DocumentButtons jobId={done.id} number={done.number} status="paid" hasInspection={false} quick />
@@ -245,7 +272,7 @@ export function QuickSaleView({
         <Link href="/jobs" className="mb-2 inline-block text-sm text-muted hover:text-ink">
           ← Jobs
         </Link>
-        <PageTitle sub={`For small jobs like an oil change: the work, the payment, and the invoice in one step. This will be INV-${number}.`}>Quick sale</PageTitle>
+        <PageTitle sub={`For small jobs like an oil change: the work, the payment, and the invoice in one step, or record it now and invoice when they pay. This will be #${number}.`}>Quick sale</PageTitle>
       </div>
 
       {/* Customer and car */}
@@ -433,22 +460,25 @@ export function QuickSaleView({
 
         <div>
           <p className="mb-2 text-[13px] font-medium text-muted">Paid by</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Paid by">
-            {METHODS.map((m) => (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" role="radiogroup" aria-label="Paid by">
+            {[...METHODS, "later" as const].map((m) => (
               <button
                 key={m}
                 type="button"
                 role="radio"
                 aria-checked={method === m}
                 onClick={() => setMethod(m)}
-                className={cx("h-12 rounded-lg border text-[15px] font-medium", method === m ? "border-ink bg-ink text-white" : "border-line bg-surface text-ink hover:border-ink")}
+                className={cx("h-12 rounded-lg border text-[15px] font-medium", m === "later" && "col-span-2 sm:col-span-1", method === m ? "border-ink bg-ink text-white" : "border-line bg-surface text-ink hover:border-ink")}
               >
-                {m === "credit" ? "Credit" : PAYMENT_LABEL[m]}
+                {m === "later" ? "Pay later" : m === "credit" ? "Credit" : PAYMENT_LABEL[m]}
               </button>
             ))}
           </div>
         </div>
-        {method && method !== "cash" ? (
+        {method === "later" ? (
+          <p className="text-sm text-muted">Saves the work and what&apos;s owed, with no invoice. You&apos;ll find it under Jobs → Owed, and invoice it when they pay.</p>
+        ) : null}
+        {method && method !== "cash" && method !== "later" ? (
           <Field label="Reference" hint="Last 4 digits or e-transfer number. Never a full card number.">
             <Input value={reference} onChange={(e) => setReference(e.target.value)} maxLength={40} placeholder="Optional" />
           </Field>
@@ -456,7 +486,7 @@ export function QuickSaleView({
 
         {error ? <Notice tone="bad">{error}</Notice> : null}
         <Button variant="primary" size="lg" onClick={save} disabled={busy} className="w-full">
-          {busy ? "Saving…" : `Paid · create INV-${number} · ${money(totals.total)}`}
+          {busy ? "Saving…" : method === "later" ? `Save · pay later · ${money(totals.total)}` : `Paid · create INV-${number} · ${money(totals.total)}`}
         </Button>
       </Card>
     </div>

@@ -441,6 +441,26 @@ describe("quick sale", () => {
     expect(j).toMatchObject({ status: "paid", customer_id: prev.customer_id, vehicle_id: prev.vehicle_id });
   });
 
+  it("pay later: records the work and number but no invoice or payment, then invoices when they pay", async () => {
+    const before = await nextNumber();
+    const j = await sale([null, JSON.stringify({ name: "Cousin Vinny", phone: "" }), null, JSON.stringify({ plate: "FAM 1", make: "Honda", model: "Civic" }), null, lines, totals(120.91), await rates(), null, "ignored"]);
+    expect(j).toMatchObject({ number: before, status: "ready", quick: true, approval_method: "in_person" });
+    expect(Number(j.amount_paid)).toBe(0);
+    expect(await nextNumber()).toBe(before + 1);
+    const q = () => as(OWNER, async () => (await db.query<{ lines: number; pays: number; inv: string | null; status: string; invoice_date: string | null }>(
+      "select (select count(*)::int from job_lines where job_id = $1) lines, (select count(*)::int from payments where job_id = $1) pays, invoice_totals->>'total' inv, status, invoice_date::text from jobs where id = $1",
+      [j.id],
+    )).rows[0]);
+    expect(await q()).toEqual({ lines: 2, pays: 0, inv: null, status: "ready", invoice_date: null });
+
+    // Weeks later they pay: invoiced and paid as from the job page, under the same number
+    await as(OWNER, async () => {
+      await db.query("update jobs set status = 'invoiced', invoice_date = '2026-12-01', invoiced_at = now(), invoice_totals = $2 where id = $1", [j.id, totals(120.91)]);
+      await db.query("insert into payments (job_id, amount, payer, method, paid_on) values ($1, 120.91, 'customer', 'etransfer', '2026-12-01')", [j.id]);
+    });
+    expect(await q()).toEqual({ lines: 2, pays: 1, inv: "120.91", status: "paid", invoice_date: "2026-12-01" });
+  });
+
   it("saves nothing, and uses no number, when something is wrong", async () => {
     const before = await nextNumber();
     const customers = async () => (await as(OWNER, () => db.query<{ n: number }>("select count(*)::int n from customers"))).rows[0].n;
