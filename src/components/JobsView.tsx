@@ -15,6 +15,7 @@ export type JobRow = TotalsJob & {
   quick: boolean;
   estimate_date: string;
   invoice_date: string | null;
+  created_at: string;
   invoice_totals: Totals | null;
   concern: string;
   customer: Pick<Customer, "name" | "phone" | "company" | "kind">;
@@ -24,16 +25,16 @@ export type JobRow = TotalsJob & {
 
 type Row = Pick<JobRow, "status" | "quick">;
 const FILTERS: { key: string; label: string; shows: (j: Row) => boolean }[] = [
+  { key: "all", label: "All", shows: () => true },
   { key: "open", label: "In the shop", shows: (j) => ["estimate", "approved", "ready"].includes(j.status) && !isOwed(j) },
   { key: "owed", label: "Owed", shows: isOwed }, // quick sales to pay later, not invoiced yet
   { key: "unpaid", label: "Unpaid", shows: (j) => j.status === "invoiced" }, // includes part paid
   { key: "paid", label: "Paid", shows: (j) => j.status === "paid" },
   { key: "declined", label: "Declined", shows: (j) => j.status === "declined" },
-  { key: "all", label: "All", shows: () => true },
 ];
 
-/** The day a job belongs to in the list: its invoice date once invoiced, else its estimate date */
-const jobDay = (j: Pick<JobRow, "invoice_date" | "estimate_date">) => j.invoice_date ?? j.estimate_date;
+/** The day a job belongs to in the list: the day it was created, in Toronto, so it never moves */
+const jobDay = (j: Pick<JobRow, "created_at">) => todayLocal(new Date(j.created_at));
 
 /** "Today", "Yesterday", or the date, for the list's day headings */
 export function dayLabel(day: string, today: string): string {
@@ -52,7 +53,7 @@ export function dayLabel(day: string, today: string): string {
 }
 
 export function JobsView({ jobs }: { jobs: JobRow[] }) {
-  const [filter, setFilter] = useState("open");
+  const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
 
   const rows = useMemo(
@@ -86,7 +87,7 @@ export function JobsView({ jobs }: { jobs: JobRow[] }) {
   const shows = words.length ? () => true : FILTERS.find((f) => f.key === filter)!.shows;
   const shown = rows
     .filter(({ j, text }) => shows(j) && words.every((w) => text.includes(w)))
-    .sort((a, b) => jobDay(b.j).localeCompare(jobDay(a.j)) || b.j.number - a.j.number);
+    .sort((a, b) => b.j.created_at.localeCompare(a.j.created_at) || b.j.number - a.j.number);
   // Grouped by day, newest first
   const today = todayLocal();
   const days: { day: string; rows: typeof shown }[] = [];
@@ -163,7 +164,7 @@ export function JobsView({ jobs }: { jobs: JobRow[] }) {
             <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center gap-3 px-4 py-3.5 hover:bg-canvas">
               <div className="w-[78px] shrink-0 sm:w-[88px]">
                 <p className="display tabular text-[17px] leading-tight text-ink">{jobNumber(j)}</p>
-                <p className="text-xs text-muted">{formatDate(j.invoice_date ?? j.estimate_date)}</p>
+                <p className="text-xs text-muted">{formatDate(jobDay(j))}</p>
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-ink">{j.customer.name}</p>
