@@ -164,7 +164,8 @@ export function JobsView({ jobs }: { jobs: JobRow[] }) {
             <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center gap-3 px-4 py-3.5 hover:bg-canvas">
               <div className="w-[78px] shrink-0 sm:w-[88px]">
                 <p className="display tabular text-[17px] leading-tight text-ink">{jobNumber(j)}</p>
-                <p className="text-xs text-muted">{formatDate(jobDay(j))}</p>
+                {/* The job's own date: the same as the day it was entered, unless it was back-dated */}
+                <p className="text-xs text-muted">{formatDate(j.estimate_date)}</p>
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-ink">{j.customer.name}</p>

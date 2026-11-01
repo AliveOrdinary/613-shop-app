@@ -494,3 +494,20 @@ describe("quick sale", () => {
     await expect(sale([null, JSON.stringify({ name: "X" }), null, JSON.stringify({ plate: "Y" }), null, lines, totals(120.91), await rates(), "cash", ""], STRANGER)).rejects.toThrow();
   });
 });
+
+describe("saved items order", () => {
+  const one = JSON.stringify([{ kind: "fee", description: "Disposal", quantity: 1, unit_price: 15, markup_pct: 0, part_condition: null, oem: null, part_number: "" }]);
+  const positions = async () => (await as(OWNER, () => db.query<{ position: number }>("select position from saved_items order by position"))).rows.map((r) => r.position);
+
+  it("never gives two items the same place, and still swaps two", async () => {
+    await as(OWNER, () => db.query("insert into saved_items (name, lines) values ('Order A', $1), ('Order B', $1)", [one]));
+    const ps = await positions();
+    expect(new Set(ps).size).toBe(ps.length);
+    await expect(as(OWNER, () => db.query("update saved_items set position = $1 where name = 'Order A'", [ps[0]]))).rejects.toThrow(/saved_items_position_key/);
+    const ids = (await as(OWNER, () => db.query<{ id: string }>("select id from saved_items where name in ('Order A', 'Order B') order by position"))).rows.map((r) => r.id);
+    await as(OWNER, () => db.query("select swap_saved_items($1, $2)", [ids[0], ids[1]]));
+    const after = (await as(OWNER, () => db.query<{ name: string }>("select name from saved_items where name in ('Order A', 'Order B') order by position"))).rows.map((r) => r.name);
+    expect(after).toEqual(["Order B", "Order A"]);
+    await as(OWNER, () => db.query("delete from saved_items where name in ('Order A', 'Order B')"));
+  });
+});
