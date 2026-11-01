@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { SignOutButton } from "./SignOutButton";
 import { ChangePassword } from "./ChangePassword";
@@ -140,6 +141,12 @@ export function SettingsView({ initial, email }: { initial: ShopSettings; email:
             <Rate label="Paint" value={draft.rate_paint} onValue={(n) => set("rate_paint", n)} />
             <Rate label="Mechanical" value={draft.rate_mechanical} onValue={(n) => set("rate_mechanical", n)} />
           </div>
+        </Section>
+
+        <Section title="Saved items" sub="One-tap buttons for work you do often, like an oil change, on jobs and quick sales.">
+          <Link href="/settings/items" className="inline-flex h-11 items-center rounded-lg border border-line bg-surface px-4 text-[15px] font-medium text-ink hover:bg-canvas">
+            Add, edit and order saved items →
+          </Link>
         </Section>
 
         <Section title="Paint and shop supplies">

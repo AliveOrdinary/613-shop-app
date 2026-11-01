@@ -14,7 +14,7 @@ export default async function QuickSalePage() {
       .select("next_job_number, hst_rate, shop_supplies_enabled, shop_supplies_pct, shop_supplies_cap, rate_body, rate_paint, rate_mechanical, paint_markup_pct")
       .eq("id", 1)
       .single<QuickSettings & { next_job_number: number }>(),
-    sb.from("saved_items").select("*").order("name").returns<SavedItem[]>(),
+    sb.from("saved_items").select("*").order("position").returns<SavedItem[]>(),
   ]);
   if (error) throw new Error(`Couldn't load customers: ${error.message}`);
   if (!s) throw new Error("Couldn't load the shop settings.");

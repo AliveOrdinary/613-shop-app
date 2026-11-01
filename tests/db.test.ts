@@ -398,6 +398,20 @@ describe("saved items", () => {
     await expect(as(OWNER, () => db.query(`insert into saved_items (name, lines) values ('Not a list', '{"kind":"fee"}')`))).rejects.toThrow();
   });
 
+  it("puts new items at the end, swaps two in one step, and can be edited", async () => {
+    const names = async () => (await as(OWNER, () => db.query<{ name: string }>("select name from saved_items order by position"))).rows.map((r) => r.name);
+    await as(OWNER, () => db.query("insert into saved_items (name, lines) values ('Oil change', $1)", [lines]));
+    expect(await names()).toEqual(["Front brakes", "Oil change"]);
+    const ids = (await as(OWNER, () => db.query<{ id: string }>("select id from saved_items order by position"))).rows.map((r) => r.id);
+    await as(OWNER, () => db.query("select swap_saved_items($1, $2)", [ids[1], ids[0]]));
+    expect(await names()).toEqual(["Oil change", "Front brakes"]);
+    await as(OWNER, () => db.query("update saved_items set name = 'Oil and filter', lines = $2 where id = $1", [ids[1], JSON.stringify([JSON.parse(lines)[0]])]));
+    const { rows } = await as(OWNER, () => db.query<{ name: string; n: number }>("select name, jsonb_array_length(lines) n from saved_items where id = $1", [ids[1]]));
+    expect(rows).toEqual([{ name: "Oil and filter", n: 1 }]);
+    await expect(as(STRANGER, () => db.query("select swap_saved_items($1, $2)", [ids[0], ids[1]]))).rejects.toThrow();
+    await as(OWNER, () => db.query("delete from saved_items where id = $1", [ids[1]]));
+  });
+
   it("is hidden from, and closed to, anyone who isn't staff", async () => {
     const { rows } = await as(STRANGER, () => db.query("select * from saved_items"));
     expect(rows).toEqual([]);
