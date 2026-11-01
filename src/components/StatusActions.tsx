@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button, Field, Input, Modal, Notice, NumberInput, Select } from "./ui";
 import { money } from "@/lib/format";
-import { APPROVAL_LABEL, PAYMENT_LABEL, QC_ITEMS, qcDone, todayLocal } from "@/lib/jobs";
+import { APPROVAL_LABEL, PAYMENT_LABEL, QC_ITEMS, formatDate, isOwed, qcDone, todayLocal } from "@/lib/jobs";
 import type { Totals } from "@/lib/totals";
 import type { ApprovalMethod, Job, PaymentMethod } from "@/lib/types";
 
@@ -45,8 +45,11 @@ export function StatusActions({
   const [odoIn, setOdoIn] = useState<number | null>(job.odometer_in);
   const [odoOut, setOdoOut] = useState<number | null>(job.odometer_out);
   const [extraOk, setExtraOk] = useState(false);
-  const [paidNow, setPaidNow] = useState(false);
-  const [payMethod, setPayMethod] = useState<PaymentMethod>("debit");
+  // An owed quick sale is invoiced because they're paying, so "paid now" starts ticked and the
+  // method is left for staff to pick rather than guessed
+  const owed = isOwed(job);
+  const [paidNow, setPaidNow] = useState(owed);
+  const [payMethod, setPayMethod] = useState<PaymentMethod | "">(owed ? "" : "debit");
   const [payRef, setPayRef] = useState("");
 
   async function run(patch: Patch, opts?: { vehicleOdometer?: number }) {
@@ -69,6 +72,7 @@ export function StatusActions({
   async function invoice() {
     if (odoIn !== null && odoOut !== null && odoOut < odoIn) return setError("Odometer out is lower than odometer in.");
     const paying = paidNow && customerOwes > 0;
+    if (paying && !payMethod) return setError("Pick how the customer paid.");
     setBusy(true);
     setError(null);
     const err = await apply(
@@ -88,7 +92,7 @@ export function StatusActions({
       setBusy(false);
       return setError(err);
     }
-    const payErr = paying ? await payNow({ amount: customerOwes, method: payMethod, reference: payRef.trim(), paid_on: invoiceDate }) : null;
+    const payErr = paying ? await payNow({ amount: customerOwes, method: payMethod as PaymentMethod, reference: payRef.trim(), paid_on: invoiceDate }) : null;
     setBusy(false);
     setDialog(null);
     if (payErr) setError(`INV-${job.number} was created, but the payment wasn't recorded: ${payErr} Use Record payment.`);
@@ -101,7 +105,7 @@ export function StatusActions({
         : s === "approved"
           ? { label: "Mark ready", onClick: markReady, disabled: busy }
           : s === "ready"
-            ? { label: "Invoice", onClick: () => setDialog("invoice"), disabled: false }
+            ? { label: owed ? "Paid · invoice" : "Invoice", onClick: () => setDialog("invoice"), disabled: false }
             : s === "invoiced"
               ? { label: "Record payment", onClick: onPay, disabled: false }
               : null;
@@ -148,7 +152,7 @@ export function StatusActions({
       {s === "ready" ? (
         <>
           <Button variant="primary" onClick={() => setDialog("invoice")}>
-            Create invoice
+            {owed ? "Paid · create invoice" : "Create invoice"}
           </Button>
           <Button variant="ghost" onClick={() => run({ status: "approved" })} disabled={busy}>
             Back to work order
@@ -228,6 +232,11 @@ export function StatusActions({
 
       {dialog === "invoice" ? (
         <Modal title={`Create INV-${job.number}`} onClose={close}>
+          {owed ? (
+            <p className="mb-3 text-sm text-muted">
+              Done {formatDate(job.estimate_date)} and not invoiced yet. The invoice is dated the day they pay.
+            </p>
+          ) : null}
           <p className="mb-4 text-sm text-muted">
             The invoice locks the lines and totals so the printed copy always matches. You can reopen it for a correction later.
           </p>
@@ -288,6 +297,7 @@ export function StatusActions({
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <Field label="Method">
                     <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value as PaymentMethod)}>
+                      {payMethod === "" ? <option value="" disabled>Pick…</option> : null}
                       {(Object.keys(PAYMENT_LABEL) as PaymentMethod[]).map((m) => (
                         <option key={m} value={m}>{PAYMENT_LABEL[m]}</option>
                       ))}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Badge, Card, EmptyState, Input, PageTitle, cx } from "./ui";
 import { money, vehicleLabel } from "@/lib/format";
-import { STATUS_LABEL, STATUS_TONE, formatDate, jobNumber } from "@/lib/jobs";
+import { formatDate, isOwed, jobNumber, statusBadge, todayLocal } from "@/lib/jobs";
 import { jobTotals, type Totals, type TotalsJob, type TotalsLine } from "@/lib/totals";
 import type { Customer, JobStatus, Vehicle } from "@/lib/types";
 
@@ -12,8 +12,10 @@ export type JobRow = TotalsJob & {
   id: string;
   number: number;
   status: JobStatus;
+  quick: boolean;
   estimate_date: string;
   invoice_date: string | null;
+  created_at: string;
   invoice_totals: Totals | null;
   concern: string;
   customer: Pick<Customer, "name" | "phone" | "company" | "kind">;
@@ -21,16 +23,37 @@ export type JobRow = TotalsJob & {
   job_lines: TotalsLine[];
 };
 
-const FILTERS: { key: string; label: string; statuses: JobStatus[] }[] = [
-  { key: "open", label: "In the shop", statuses: ["estimate", "approved", "ready"] },
-  { key: "unpaid", label: "Unpaid", statuses: ["invoiced"] }, // includes part paid
-  { key: "paid", label: "Paid", statuses: ["paid"] },
-  { key: "declined", label: "Declined", statuses: ["declined"] },
-  { key: "all", label: "All", statuses: ["estimate", "approved", "ready", "invoiced", "paid", "declined"] },
+type Row = Pick<JobRow, "status" | "quick">;
+const FILTERS: { key: string; label: string; shows: (j: Row) => boolean }[] = [
+  { key: "all", label: "All", shows: () => true },
+  { key: "open", label: "In the shop", shows: (j) => ["estimate", "approved", "ready"].includes(j.status) && !isOwed(j) },
+  { key: "owed", label: "Owed", shows: isOwed }, // quick sales to pay later, not invoiced yet
+  { key: "unpaid", label: "Unpaid", shows: (j) => j.status === "invoiced" }, // includes part paid
+  { key: "paid", label: "Paid", shows: (j) => j.status === "paid" },
+  { key: "declined", label: "Declined", shows: (j) => j.status === "declined" },
 ];
 
+/** The day a job belongs to in the list: the day it was created, in Toronto, so it never moves */
+const jobDay = (j: Pick<JobRow, "created_at">) => todayLocal(new Date(j.created_at));
+
+/** "Today", "Yesterday", or the date, for the list's day headings */
+export function dayLabel(day: string, today: string): string {
+  if (day === today) return "Today";
+  const t = new Date(`${today}T12:00:00`);
+  t.setDate(t.getDate() - 1);
+  const y = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  if (day === y) return "Yesterday";
+  const d = new Date(`${day}T12:00:00`);
+  return d.toLocaleDateString("en-CA", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    ...(day.slice(0, 4) === today.slice(0, 4) ? {} : { year: "numeric" }),
+  });
+}
+
 export function JobsView({ jobs }: { jobs: JobRow[] }) {
-  const [filter, setFilter] = useState("open");
+  const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
 
   const rows = useMemo(
@@ -56,20 +79,36 @@ export function JobsView({ jobs }: { jobs: JobRow[] }) {
     [jobs],
   );
 
-  const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.key, jobs.filter((j) => f.statuses.includes(j.status)).length])), [jobs]);
+  const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.key, jobs.filter(f.shows).length])), [jobs]);
+  const owedTotal = useMemo(() => rows.reduce((sum, r) => (isOwed(r.j) ? sum + r.total : sum), 0), [rows]);
 
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   // A search looks across every status
-  const statuses = words.length ? FILTERS[4].statuses : FILTERS.find((f) => f.key === filter)!.statuses;
-  const shown = rows.filter(({ j, text }) => statuses.includes(j.status) && words.every((w) => text.includes(w)));
+  const shows = words.length ? () => true : FILTERS.find((f) => f.key === filter)!.shows;
+  const shown = rows
+    .filter(({ j, text }) => shows(j) && words.every((w) => text.includes(w)))
+    .sort((a, b) => b.j.created_at.localeCompare(a.j.created_at) || b.j.number - a.j.number);
+  // Grouped by day, newest first
+  const today = todayLocal();
+  const days: { day: string; rows: typeof shown }[] = [];
+  for (const r of shown) {
+    const day = jobDay(r.j);
+    if (days.at(-1)?.day === day) days.at(-1)!.rows.push(r);
+    else days.push({ day, rows: [r] });
+  }
 
   return (
     <div>
       <PageTitle
         action={
-          <Link href="/jobs/new" className="inline-flex h-11 items-center rounded-lg bg-brand px-4 text-[15px] font-medium text-ink hover:bg-brand-hover">
-            New job
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/jobs/quick" className="inline-flex h-11 items-center rounded-lg border border-line bg-surface px-4 text-[15px] font-medium text-ink hover:bg-canvas">
+              Quick sale
+            </Link>
+            <Link href="/jobs/new" className="inline-flex h-11 items-center rounded-lg bg-brand px-4 text-[15px] font-medium text-ink hover:bg-brand-hover">
+              New job
+            </Link>
+          </div>
         }
       >
         Jobs
@@ -93,10 +132,19 @@ export function JobsView({ jobs }: { jobs: JobRow[] }) {
               )}
             >
               {f.label}
-              <span className={cx("tabular text-xs", filter === f.key ? "text-brand" : "text-faint")}>{counts[f.key]}</span>
+              <span className={cx("tabular text-xs", filter === f.key ? "text-brand" : "text-faint")}>
+                {counts[f.key]}
+                {f.key === "owed" && owedTotal > 0 ? ` · ${money(owedTotal)}` : ""}
+              </span>
             </button>
           ))}
         </div>
+      ) : null}
+
+      {words.length === 0 && filter === "owed" && counts.owed > 0 ? (
+        <p className="mb-4 text-sm text-muted">
+          {money(owedTotal)} owed on {counts.owed} quick {counts.owed === 1 ? "sale" : "sales"}. When they pay, open the sale and tap Paid · create invoice.
+        </p>
       ) : null}
 
       {jobs.length === 0 ? (
@@ -104,31 +152,44 @@ export function JobsView({ jobs }: { jobs: JobRow[] }) {
       ) : shown.length === 0 ? (
         <EmptyState title={words.length ? `No job matches “${q}”` : "Nothing here right now"} />
       ) : (
-        <Card className="divide-y divide-line overflow-hidden">
-          {shown.map(({ j, total }) => (
+        <div className="space-y-5">
+          {days.map(({ day, rows }) => (
+            <section key={day}>
+              <h2 className="mb-2 flex items-baseline gap-2 text-[13px] font-semibold text-charcoal">
+                {dayLabel(day, today)}
+                <span className="font-normal text-faint">{rows.length}</span>
+              </h2>
+            <Card className="divide-y divide-line overflow-hidden">
+              {rows.map(({ j, total }) => (
             <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center gap-3 px-4 py-3.5 hover:bg-canvas">
               <div className="w-[78px] shrink-0 sm:w-[88px]">
                 <p className="display tabular text-[17px] leading-tight text-ink">{jobNumber(j)}</p>
-                <p className="text-xs text-muted">{formatDate(j.invoice_date ?? j.estimate_date)}</p>
+                {/* The job's own date: the same as the day it was entered, unless it was back-dated */}
+                <p className="text-xs text-muted">{formatDate(j.estimate_date)}</p>
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-ink">{j.customer.name}</p>
                 <p className="truncate text-sm text-muted">{[vehicleLabel(j.vehicle), j.vehicle.plate].filter(Boolean).join(" · ")}</p>
                 <span className="mt-1 flex flex-wrap gap-1 sm:hidden">
-                  <Badge tone={STATUS_TONE[j.status]}>{j.status === "invoiced" && Number(j.amount_paid) > 0 ? "Part paid" : STATUS_LABEL[j.status]}</Badge>
+                  <Badge tone={statusBadge(j).tone}>{statusBadge(j).label}</Badge>
                   {j.is_insurance ? <Badge>Insurance</Badge> : null}
+                  {j.quick ? <Badge>Quick</Badge> : null}
                 </span>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
                 <span className="tabular font-medium text-ink">{money(total)}</span>
                 <span className="hidden gap-1 sm:flex">
                   {j.is_insurance ? <Badge>Insurance</Badge> : null}
-                  <Badge tone={STATUS_TONE[j.status]}>{j.status === "invoiced" && Number(j.amount_paid) > 0 ? "Part paid" : STATUS_LABEL[j.status]}</Badge>
+                {j.quick ? <Badge>Quick</Badge> : null}
+                  <Badge tone={statusBadge(j).tone}>{statusBadge(j).label}</Badge>
                 </span>
               </div>
             </Link>
           ))}
-        </Card>
+            </Card>
+            </section>
+          ))}
+        </div>
       )}
     </div>
   );

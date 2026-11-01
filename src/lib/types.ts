@@ -114,6 +114,8 @@ export type Job = {
   id: string;
   number: number;
   status: JobStatus;
+  /** Made with Quick sale: invoiced and paid in one step */
+  quick: boolean;
   customer_id: string;
   vehicle_id: string;
   concern: string;

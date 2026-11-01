@@ -351,7 +351,7 @@ export function LinesEditor({
           lines={lines}
           onClose={() => setSaving(false)}
           onSaved={(item) => {
-            setSaved((xs) => [...xs, item].sort((a, b) => a.name.localeCompare(b.name)));
+            setSaved((xs) => [...xs, item]);
             setSaving(false);
           }}
         />

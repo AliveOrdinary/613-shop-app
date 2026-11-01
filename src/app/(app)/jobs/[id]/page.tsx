@@ -20,7 +20,7 @@ export default async function JobPage({ params }: PageProps<"/jobs/[id]">) {
       .order("created_at", { referencedTable: "job_files", ascending: true })
       .maybeSingle<JobFull>(),
     sb.from("shop_settings").select("rate_body, rate_paint, rate_mechanical, paint_markup_pct, hst_number").eq("id", 1).single<Rates & { hst_number: string }>(),
-    sb.from("saved_items").select("*").order("name").returns<SavedItem[]>(),
+    sb.from("saved_items").select("*").order("position").returns<SavedItem[]>(),
   ]);
   if (error) throw new Error(`Couldn't load the job: ${error.message}`);
   if (!data) notFound();

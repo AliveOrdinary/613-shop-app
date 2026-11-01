@@ -2,7 +2,7 @@
 // quantities, part prices and descriptions carry over; labour rates and the paint markup come
 // from today's Settings, so a rate change is never missed.
 
-import type { LineKind } from "./totals";
+import { lineAmount, type LineKind } from "./totals";
 import type { JobLine, JobStatus } from "./types";
 
 export type Rates = { rate_body: number; rate_paint: number; rate_mechanical: number; paint_markup_pct: number };
@@ -10,7 +10,7 @@ export type Rates = { rate_body: number; rate_paint: number; rate_mechanical: nu
 /** What a line keeps when it's saved for reuse */
 export type ReusableLine = Pick<JobLine, "kind" | "description" | "quantity" | "unit_price" | "markup_pct" | "part_condition" | "oem" | "part_number">;
 
-export type SavedItem = { id: string; name: string; lines: ReusableLine[]; created_at: string };
+export type SavedItem = { id: string; name: string; lines: ReusableLine[]; position: number; created_at: string };
 
 /** The car's most recent other job that has lines, for "Copy lines from …" */
 export type PreviousJob = { id: string; number: number; status: JobStatus; estimate_date: string; lines: ReusableLine[] };
@@ -49,4 +49,10 @@ export function reuseLines(lines: ReusableLine[], rates: Rates, jobId: string, a
       markup_pct: l.kind === "paint_materials" ? Number(rates.paint_markup_pct) || 0 : 0,
     };
   });
+}
+
+/** What an item's lines come to before tax at today's rates, for the list in Settings */
+export function savedItemPrice(lines: ReusableLine[], rates: Rates): number {
+  const cents = reuseLines(lines, rates, "", 0).reduce((s, l) => s + Math.round(lineAmount(l) * 100), 0);
+  return cents / 100;
 }

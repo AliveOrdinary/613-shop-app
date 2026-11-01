@@ -52,6 +52,18 @@ export const INTAKE_BODY = ["Existing damage", "Scratches", "Dents", "Rust", "Gl
 export const INTAKE_MECHANICAL = ["Engine", "Transmission", "Brakes", "Suspension", "Steering", "Electrical", "HVAC"];
 export const INTAKE_LIGHTS = ["None", "Check engine", "ABS", "Airbag", "TPMS"];
 
+/** A quick sale recorded to pay later: the work is done, nothing is invoiced yet. */
+export function isOwed(job: Pick<Job, "quick" | "status">): boolean {
+  return job.quick && job.status === "ready";
+}
+
+/** The badge a job shows: its status, or "Part paid" / "Owed" where that says more. */
+export function statusBadge(job: Pick<Job, "quick" | "status"> & { amount_paid: number | string }): { label: string; tone: (typeof STATUS_TONE)[JobStatus] } {
+  if (isOwed(job)) return { label: "Owed", tone: "warn" };
+  if (job.status === "invoiced" && Number(job.amount_paid) > 0) return { label: "Part paid", tone: STATUS_TONE.invoiced };
+  return { label: STATUS_LABEL[job.status], tone: STATUS_TONE[job.status] };
+}
+
 /** Statuses whose money is locked. */
 export function isLocked(status: JobStatus): boolean {
   return status === "invoiced" || status === "paid";
